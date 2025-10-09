@@ -1,6 +1,6 @@
 # ApmBro
 
-Minimal APM for Rails apps. Automatically measures each controller action's total time and posts it to a remote endpoint with an API key read from your app's settings/credentials/env.
+Minimal APM for Rails apps. Automatically measures each controller action's total time, tracks SQL queries, and posts metrics to a remote endpoint with an API key read from your app's settings/credentials/env.
 
 ## Installation
 
@@ -29,6 +29,9 @@ You can set via any of the following (priority top to bottom):
 ```ruby
 config.x.apm_bro.api_key = ENV.fetch("APM_BRO_API_KEY", nil)
 config.x.apm_bro.enabled = true
+config.x.apm_bro.track_sql_queries = true
+config.x.apm_bro.max_sql_queries = 50
+config.x.apm_bro.sanitize_sql_queries = true
 ```
 
 - `config/apm_bro.yml` (via `Rails.application.config_for(:apm_bro)`):
@@ -64,9 +67,48 @@ apm_bro:
 ApmBro.configure do |cfg|
   cfg.api_key = ENV["APM_BRO_API_KEY"]
   cfg.endpoint_url = "https://apm.example.com/v1/metrics"
+  cfg.track_sql_queries = true
+  cfg.max_sql_queries = 50
+  cfg.sanitize_sql_queries = true
 end
 
 ApmBro::Subscriber.subscribe!(client: ApmBro::Client.new)
+```
+
+## SQL Query Tracking
+
+ApmBro automatically tracks SQL queries executed during each request when `track_sql_queries` is enabled (default: true). The following configuration options are available:
+
+- `track_sql_queries` (boolean, default: true) - Enable/disable SQL query tracking
+- `max_sql_queries` (integer, default: 50) - Maximum number of queries to track per request
+- `sanitize_sql_queries` (boolean, default: true) - Sanitize sensitive data from SQL queries
+
+When enabled, each request payload will include a `sql_queries` array containing:
+- `sql` - The SQL query (sanitized if enabled)
+- `name` - Query name (e.g., "User Load", "User Update")
+- `duration_ms` - Query execution time in milliseconds
+- `cached` - Whether the query was cached
+- `connection_id` - Database connection ID
+
+Example payload:
+```json
+{
+  "event": "process_action.action_controller",
+  "payload": {
+    "controller": "UsersController",
+    "action": "show",
+    "duration_ms": 150.25,
+    "sql_queries": [
+      {
+        "sql": "SELECT * FROM users WHERE id = ?",
+        "name": "User Load",
+        "duration_ms": 12.5,
+        "cached": false,
+        "connection_id": 123
+      }
+    ]
+  }
+}
 ```
 
 ## Development

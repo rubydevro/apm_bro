@@ -12,14 +12,18 @@ module ApmBro
       puts "--------------------------------"
     end
 
-    def post_metric(event_name:, payload:)
+    def post_metric(event_name:, payload:, error: false)
       unless @configuration.enabled
         log_debug("ApmBro disabled; skipping metric #{event_name}")
         return
       end
 
       api_key = @configuration.resolve_api_key
-      endpoint_url = 'http://localhost:3100/apm/v1/metrics'
+
+      endpoint_url = @configuration.respond_to?(:ruby_dev) && @configuration.ruby_dev ?
+          'http://localhost:3100/apm/v1/metrics' :
+          "https://uptime.aberatii.com/apm/v1/metrics"
+      
       if api_key.nil?
         log_debug("ApmBro missing api_key; skipping")
         return
@@ -35,7 +39,7 @@ module ApmBro
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["Authorization"] = "Bearer #{api_key}"
-      request.body = JSON.dump({ event: event_name, payload: payload, sent_at: Time.now.utc.iso8601 })
+      request.body = JSON.dump({ event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, error: error })
 
       # Fire-and-forget using a short-lived thread to avoid blocking the request cycle.
       Thread.new do

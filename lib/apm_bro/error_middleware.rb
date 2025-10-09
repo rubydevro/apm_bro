@@ -16,7 +16,10 @@ module ApmBro
     rescue Exception => exception # rubocop:disable Lint/RescueException
       begin
         payload = build_payload(exception, env)
-        @client.post_metric(event_name: EVENT_NAME, payload: payload)
+        # Use the error class name as the event name
+        event_name = exception.class.name.to_s
+        event_name = EVENT_NAME if event_name.empty?
+        @client.post_metric(event_name: event_name, payload: payload)
       rescue StandardError
         # Never let APM reporting interfere with the host app
       end

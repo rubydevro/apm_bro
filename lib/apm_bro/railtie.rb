@@ -14,6 +14,9 @@ module ApmBro
             cfg.api_key = xcfg.api_key if xcfg.respond_to?(:api_key)
             cfg.endpoint_url = xcfg.endpoint_url if xcfg.respond_to?(:endpoint_url)
             cfg.enabled = xcfg.enabled if xcfg.respond_to?(:enabled)
+            cfg.track_sql_queries = xcfg.track_sql_queries if xcfg.respond_to?(:track_sql_queries)
+            cfg.max_sql_queries = xcfg.max_sql_queries if xcfg.respond_to?(:max_sql_queries)
+            cfg.sanitize_sql_queries = xcfg.sanitize_sql_queries if xcfg.respond_to?(:sanitize_sql_queries)
           end
         end
       rescue StandardError
@@ -23,10 +26,25 @@ module ApmBro
     initializer "apm_bro.subscribe" do |app|
       app.config.after_initialize do
         begin
+          puts "Subscribing to Subscriber"
           ApmBro::Subscriber.subscribe!(client: ApmBro::Client.new)
           # Install outgoing HTTP instrumentation
           require "apm_bro/http_instrumentation"
+          puts "Installing HTTP instrumentation"
           ApmBro::HttpInstrumentation.install!(client: ApmBro::Client.new)
+          
+            # Install SQL query tracking if enabled
+            puts "ApmBro.configuration.track_sql_queries: #{ApmBro.configuration.track_sql_queries}"
+            puts "ApmBro.configuration.max_sql_queries: #{ApmBro.configuration.max_sql_queries}"
+            puts "ApmBro.configuration.sanitize_sql_queries: #{ApmBro.configuration.sanitize_sql_queries}"
+            if ApmBro.configuration.track_sql_queries
+              puts "Installing SQL query tracking"
+              require "apm_bro/sql_subscriber"
+              ApmBro::SqlSubscriber.subscribe!(
+                max_queries: ApmBro.configuration.max_sql_queries || 50,
+                sanitize_queries: ApmBro.configuration.sanitize_sql_queries != false
+              )
+            end
         rescue StandardError
           # Never raise in Railtie init
         end
@@ -45,6 +63,16 @@ module ApmBro
         else
           app.config.middleware.use(::ApmBro::ErrorMiddleware)
         end
+      rescue StandardError
+        # Never raise in Railtie init
+      end
+    end
+
+    # Insert SQL tracking middleware
+    initializer "apm_bro.sql_tracking_middleware" do |app|
+      begin
+        require "apm_bro/sql_tracking_middleware"
+        app.config.middleware.use(::ApmBro::SqlTrackingMiddleware)
       rescue StandardError
         # Never raise in Railtie init
       end

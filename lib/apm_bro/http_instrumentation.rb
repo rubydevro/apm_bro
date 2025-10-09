@@ -33,7 +33,7 @@ module ApmBro
               uri = URI.parse(req.uri ? req.uri.to_s : "http://#{@address}:#{@port}#{req.path}") rescue nil
               
               # Skip instrumentation for our own APM endpoint to prevent infinite loops
-              next if uri && uri.to_s.include?("localhost:3100/apm/v1/metrics")
+              next if uri && (uri.to_s.include?("localhost") || uri.to_s.include?("uptime.aberatii.com"))
               
               payload = {
                 library: "net_http",
@@ -45,7 +45,10 @@ module ApmBro
                 duration_ms: duration_ms,
                 exception: (error && error.class.name)
               }
-              client.post_metric(event_name: EVENT_NAME, payload: payload)
+              # Accumulate per-request; only send with controller metric
+              if Thread.current[:apm_bro_http_events]
+                Thread.current[:apm_bro_http_events] << payload
+              end
             rescue StandardError
             end
           end
@@ -79,7 +82,10 @@ module ApmBro
                 status: (response && response.code),
                 duration_ms: duration_ms
               }
-              client.post_metric(event_name: EVENT_NAME, payload: payload)
+              # Accumulate per-request; only send with controller metric
+              if Thread.current[:apm_bro_http_events]
+                Thread.current[:apm_bro_http_events] << payload
+              end
             rescue StandardError
             end
           end
