@@ -22,7 +22,7 @@ module ApmBro
 
       endpoint_url = @configuration.respond_to?(:ruby_dev) && @configuration.ruby_dev ?
           'http://localhost:3100/apm/v1/metrics' :
-          "https://uptime.aberatii.com/apm/v1/metrics"
+          "https://deadbro.aberatii.com/apm/v1/metrics"
       
       if api_key.nil?
         log_debug("ApmBro missing api_key; skipping")
