@@ -4,7 +4,7 @@ module ApmBro
   class Configuration
     DEFAULT_ENDPOINT_PATH = "/v1/metrics".freeze
 
-    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :track_sql_queries, :max_sql_queries, :sanitize_sql_queries, :ruby_dev
+    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev
 
     def initialize
       @api_key = nil
@@ -12,9 +12,6 @@ module ApmBro
       @open_timeout = 1.0
       @read_timeout = 1.0
       @enabled = true
-      @track_sql_queries = true
-      @max_sql_queries = 50
-      @sanitize_sql_queries = true
       @ruby_dev = false
     end
 

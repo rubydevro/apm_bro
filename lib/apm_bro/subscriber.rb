@@ -10,10 +10,11 @@ module ApmBro
       ActiveSupport::Notifications.subscribe(EVENT_NAME) do |name, started, finished, _unique_id, data|
         duration_ms = ((finished - started) * 1000.0).round(2)
         # Stop SQL tracking and get collected queries (this was started by the request)
-        sql_queries = []
-        if defined?(ApmBro::SqlSubscriber)
-          sql_queries = ApmBro::SqlSubscriber.stop_request_tracking
-        end
+        sql_queries = ApmBro::SqlSubscriber.stop_request_tracking
+        
+        # Stop view rendering tracking and get collected view events
+        view_events = ApmBro::ViewRenderingSubscriber.stop_request_tracking
+        view_performance = ApmBro::ViewRenderingSubscriber.analyze_view_performance(view_events)
         
         # Report exceptions attached to this action (e.g. controller/view errors)
         if data[:exception] || data[:exception_object]
@@ -65,7 +66,9 @@ module ApmBro
           sql_queries: sql_queries,
           http_outgoing: (Thread.current[:apm_bro_http_events] || []),
           cache_hits: cache_hits(data),
-          cache_misses: cache_misses(data)
+          cache_misses: cache_misses(data),
+          view_events: view_events,
+          view_performance: view_performance
         }
         
         client.post_metric(event_name: name, payload: payload)

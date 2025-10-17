@@ -1,6 +1,6 @@
 # ApmBro
 
-Minimal APM for Rails apps. Automatically measures each controller action's total time, tracks SQL queries, and posts metrics to a remote endpoint with an API key read from your app's settings/credentials/env.
+Minimal APM for Rails apps. Automatically measures each controller action's total time, tracks SQL queries, monitors view rendering performance, monitors background jobs, and posts metrics to a remote endpoint with an API key read from your app's settings/credentials/env.
 
 ## Installation
 
@@ -29,9 +29,6 @@ You can set via any of the following (priority top to bottom):
 ```ruby
 config.x.apm_bro.api_key = ENV.fetch("APM_BRO_API_KEY", nil)
 config.x.apm_bro.enabled = true
-config.x.apm_bro.track_sql_queries = true
-config.x.apm_bro.max_sql_queries = 50
-config.x.apm_bro.sanitize_sql_queries = true
 ```
 
 - `config/apm_bro.yml` (via `Rails.application.config_for(:apm_bro)`):
@@ -67,9 +64,6 @@ apm_bro:
 ApmBro.configure do |cfg|
   cfg.api_key = ENV["APM_BRO_API_KEY"]
   cfg.endpoint_url = "https://apm.example.com/v1/metrics"
-  cfg.track_sql_queries = true
-  cfg.max_sql_queries = 50
-  cfg.sanitize_sql_queries = true
 end
 
 ApmBro::Subscriber.subscribe!(client: ApmBro::Client.new)
@@ -77,18 +71,13 @@ ApmBro::Subscriber.subscribe!(client: ApmBro::Client.new)
 
 ## SQL Query Tracking
 
-ApmBro automatically tracks SQL queries executed during each request when `track_sql_queries` is enabled (default: true). The following configuration options are available:
-
-- `track_sql_queries` (boolean, default: true) - Enable/disable SQL query tracking
-- `max_sql_queries` (integer, default: 50) - Maximum number of queries to track per request
-- `sanitize_sql_queries` (boolean, default: true) - Sanitize sensitive data from SQL queries
-
-When enabled, each request payload will include a `sql_queries` array containing:
-- `sql` - The SQL query (sanitized if enabled)
+ApmBro automatically tracks SQL queries executed during each request and job. Each request payload will include a `sql_queries` array containing:
+- `sql` - The SQL query (always sanitized)
 - `name` - Query name (e.g., "User Load", "User Update")
 - `duration_ms` - Query execution time in milliseconds
 - `cached` - Whether the query was cached
 - `connection_id` - Database connection ID
+- `trace` - Call stack showing where the query was executed
 
 Example payload:
 ```json
@@ -104,10 +93,131 @@ Example payload:
         "name": "User Load",
         "duration_ms": 12.5,
         "cached": false,
-        "connection_id": 123
+        "connection_id": 123,
+        "trace": [
+          "app/models/user.rb:105:in `map'",
+          "app/models/user.rb:105:in `agency_permissions_for'",
+          "app/services/permissions_service.rb:29:in `setup'",
+          "app/controllers/application_controller.rb:192:in `new'"
+        ]
       }
     ]
   }
+}
+```
+
+## View Rendering Tracking
+
+ApmBro automatically tracks view rendering performance for each request. This includes:
+
+- **Individual view events**: Templates, partials, and collections rendered
+- **Performance metrics**: Rendering times for each view component
+- **Cache analysis**: Cache hit rates for partials and collections
+- **Slow view detection**: Identification of the slowest rendering views
+- **Frequency analysis**: Most frequently rendered views
+
+Each request payload includes:
+- `view_events` - Array of individual view rendering events
+- `view_performance` - Aggregated performance analysis
+
+Example view performance data:
+```json
+{
+  "view_performance": {
+    "total_views_rendered": 15,
+    "total_view_duration_ms": 45.2,
+    "average_view_duration_ms": 3.01,
+    "by_type": {
+      "template": 1,
+      "partial": 12,
+      "collection": 2
+    },
+    "slowest_views": [
+      {
+        "identifier": "users/_user_card.html.erb",
+        "duration_ms": 8.5,
+        "type": "partial"
+      }
+    ],
+    "partial_cache_hit_rate": 75.0,
+    "collection_cache_hit_rate": 60.0
+  }
+}
+```
+
+## Job Tracking
+
+ApmBro automatically tracks ActiveJob background jobs when ActiveJob is available. Each job execution is tracked with:
+
+- `job_class` - The job class name (e.g., "UserMailer::WelcomeEmail")
+- `job_id` - Unique job identifier
+- `queue_name` - The queue the job was processed from
+- `arguments` - Sanitized job arguments (sensitive data filtered)
+- `duration_ms` - Job execution time in milliseconds
+- `status` - "completed" or "failed"
+- `sql_queries` - Array of SQL queries executed during the job
+- `exception_class` - Exception class name (for failed jobs)
+- `message` - Exception message (for failed jobs)
+- `backtrace` - Exception backtrace (for failed jobs)
+
+Example successful job payload:
+```json
+{
+  "event": "perform.active_job",
+  "payload": {
+    "job_class": "UserMailer::WelcomeEmail",
+    "job_id": "abc123",
+    "queue_name": "mailers",
+    "arguments": ["user@example.com", "John Doe"],
+    "duration_ms": 1250.5,
+    "status": "completed",
+    "sql_queries": [
+      {
+        "sql": "SELECT * FROM users WHERE email = ?",
+        "name": "User Load",
+        "duration_ms": 12.5,
+        "cached": false,
+        "connection_id": 123,
+        "trace": [
+          "app/jobs/user_mailer_job.rb:15:in `perform'",
+          "app/models/user.rb:42:in `welcome_email'"
+        ]
+      }
+    ],
+    "rails_env": "production"
+  }
+}
+```
+
+Example failed job payload:
+```json
+{
+  "event": "StandardError",
+  "payload": {
+    "job_class": "DataProcessorJob",
+    "job_id": "def456",
+    "queue_name": "default",
+    "arguments": [123],
+    "duration_ms": 500.0,
+    "status": "failed",
+    "sql_queries": [
+      {
+        "sql": "UPDATE data SET status = ? WHERE id = ?",
+        "name": "Data Update",
+        "duration_ms": 8.2,
+        "cached": false,
+        "connection_id": 123,
+        "trace": [
+          "app/jobs/data_processor_job.rb:15:in `perform'",
+          "app/models/data.rb:42:in `process'"
+        ]
+      }
+    ],
+    "exception_class": "StandardError",
+    "message": "Connection timeout",
+    "backtrace": ["app/jobs/data_processor_job.rb:15", "lib/processor.rb:42"]
+  },
+  "error": true
 }
 ```
 

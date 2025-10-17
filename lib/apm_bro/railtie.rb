@@ -12,11 +12,7 @@ module ApmBro
           xcfg = Rails.application.config.x.apm_bro
           ApmBro.configure do |cfg|
             cfg.api_key = xcfg.api_key if xcfg.respond_to?(:api_key)
-            cfg.endpoint_url = xcfg.endpoint_url if xcfg.respond_to?(:endpoint_url)
             cfg.enabled = xcfg.enabled if xcfg.respond_to?(:enabled)
-            cfg.track_sql_queries = xcfg.track_sql_queries if xcfg.respond_to?(:track_sql_queries)
-            cfg.max_sql_queries = xcfg.max_sql_queries if xcfg.respond_to?(:max_sql_queries)
-            cfg.sanitize_sql_queries = xcfg.sanitize_sql_queries if xcfg.respond_to?(:sanitize_sql_queries)
           end
         end
       rescue StandardError
@@ -33,18 +29,24 @@ module ApmBro
           puts "Installing HTTP instrumentation"
           ApmBro::HttpInstrumentation.install!(client: ApmBro::Client.new)
           
-            # Install SQL query tracking if enabled
-            puts "ApmBro.configuration.track_sql_queries: #{ApmBro.configuration.track_sql_queries}"
-            puts "ApmBro.configuration.max_sql_queries: #{ApmBro.configuration.max_sql_queries}"
-            puts "ApmBro.configuration.sanitize_sql_queries: #{ApmBro.configuration.sanitize_sql_queries}"
-            if ApmBro.configuration.track_sql_queries
-              puts "Installing SQL query tracking"
-              require "apm_bro/sql_subscriber"
-              ApmBro::SqlSubscriber.subscribe!(
-                max_queries: ApmBro.configuration.max_sql_queries || 50,
-                sanitize_queries: ApmBro.configuration.sanitize_sql_queries != false
-              )
-            end
+          # Install SQL query tracking
+          puts "Installing SQL query tracking"
+          require "apm_bro/sql_subscriber"
+          ApmBro::SqlSubscriber.subscribe!
+          
+          # Install view rendering tracking
+          puts "Installing view rendering tracking"
+          require "apm_bro/view_rendering_subscriber"
+          ApmBro::ViewRenderingSubscriber.subscribe!(client: ApmBro::Client.new)
+          
+          # Install job tracking if ActiveJob is available
+          if defined?(ActiveJob)
+            puts "Installing job tracking"
+            require "apm_bro/job_subscriber"
+            require "apm_bro/job_sql_tracking_middleware"
+            ApmBro::JobSqlTrackingMiddleware.subscribe!
+            ApmBro::JobSubscriber.subscribe!(client: ApmBro::Client.new)
+          end
         rescue StandardError
           # Never raise in Railtie init
         end
