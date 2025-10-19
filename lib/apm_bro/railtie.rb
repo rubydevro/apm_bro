@@ -39,6 +39,19 @@ module ApmBro
           require "apm_bro/view_rendering_subscriber"
           ApmBro::ViewRenderingSubscriber.subscribe!(client: ApmBro::Client.new)
           
+          # Install lightweight memory tracking (default)
+          puts "Installing lightweight memory tracking"
+          require "apm_bro/lightweight_memory_tracker"
+          require "apm_bro/memory_leak_detector"
+          ApmBro::MemoryLeakDetector.initialize_history
+          
+          # Install detailed memory tracking only if enabled
+          if ApmBro.configuration.allocation_tracking_enabled
+            puts "Installing detailed memory tracking (allocation tracking enabled)"
+            require "apm_bro/memory_tracking_subscriber"
+            ApmBro::MemoryTrackingSubscriber.subscribe!(client: ApmBro::Client.new)
+          end
+          
           # Install job tracking if ActiveJob is available
           if defined?(ActiveJob)
             puts "Installing job tracking"

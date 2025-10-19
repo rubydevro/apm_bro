@@ -1,6 +1,6 @@
 # ApmBro
 
-Minimal APM for Rails apps. Automatically measures each controller action's total time, tracks SQL queries, monitors view rendering performance, monitors background jobs, and posts metrics to a remote endpoint with an API key read from your app's settings/credentials/env.
+Minimal APM for Rails apps. Automatically measures each controller action's total time, tracks SQL queries, monitors view rendering performance, tracks memory usage and detects leaks, monitors background jobs, and posts metrics to a remote endpoint with an API key read from your app's settings/credentials/env.
 
 ## Installation
 
@@ -143,6 +143,88 @@ Example view performance data:
     "collection_cache_hit_rate": 60.0
   }
 }
+```
+
+## Memory Tracking & Leak Detection
+
+ApmBro automatically tracks memory usage and detects memory leaks with minimal performance impact. This includes:
+
+### Performance-Optimized Memory Tracking
+
+By default, ApmBro uses **lightweight memory tracking** that has minimal performance impact:
+
+- **Memory Usage Monitoring**: Track memory consumption per request (using GC stats, not system calls)
+- **Memory Leak Detection**: Detect growing memory patterns over time
+- **GC Efficiency Analysis**: Monitor garbage collection effectiveness
+- **Zero Allocation Tracking**: No object allocation tracking by default (can be enabled)
+
+### Configuration Options
+
+```ruby
+# In your Rails configuration
+ApmBro.configure do |config|
+  config.memory_tracking_enabled = true        # Enable lightweight memory tracking (default: true)
+  config.allocation_tracking_enabled = false   # Enable detailed allocation tracking (default: false)
+end
+```
+
+**Performance Impact:**
+- **Lightweight mode**: ~0.1ms overhead per request
+- **Allocation tracking**: ~2-5ms overhead per request (only enable when needed)
+
+Each request payload includes:
+- `memory_events` - Detailed memory tracking data
+- `memory_performance` - Aggregated memory analysis
+
+Example memory performance data:
+```json
+{
+  "memory_performance": {
+    "memory_growth_mb": 2.5,
+    "total_allocations": 1250,
+    "total_allocated_size_mb": 15.8,
+    "allocations_per_second": 125.0,
+    "top_allocating_classes": [
+      {
+        "class_name": "String",
+        "count": 500,
+        "size": 8000000,
+        "size_mb": 8.0
+      }
+    ],
+    "large_objects": {
+      "count": 2,
+      "total_size_mb": 3.2,
+      "largest_object_mb": 2.1
+    },
+    "gc_efficiency": {
+      "gc_count_increase": 3,
+      "heap_pages_increase": 2,
+      "objects_allocated": 1250
+    }
+  }
+}
+```
+
+### Memory Helper Methods
+
+Use `ApmBro::MemoryHelpers` for manual memory monitoring:
+
+```ruby
+# Take a memory snapshot
+ApmBro::MemoryHelpers.snapshot("before_heavy_operation")
+
+# Monitor memory during a block
+ApmBro::MemoryHelpers.monitor_memory("data_processing") do
+  # Your code here
+  process_large_dataset
+end
+
+# Check for memory leaks
+ApmBro::MemoryHelpers.check_for_leaks
+
+# Get memory summary
+ApmBro::MemoryHelpers.memory_summary
 ```
 
 ## Job Tracking

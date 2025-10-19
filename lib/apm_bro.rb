@@ -9,6 +9,10 @@ module ApmBro
   autoload :SqlSubscriber, "apm_bro/sql_subscriber"
   autoload :SqlTrackingMiddleware, "apm_bro/sql_tracking_middleware"
   autoload :ViewRenderingSubscriber, "apm_bro/view_rendering_subscriber"
+  autoload :MemoryTrackingSubscriber, "apm_bro/memory_tracking_subscriber"
+  autoload :MemoryLeakDetector, "apm_bro/memory_leak_detector"
+  autoload :LightweightMemoryTracker, "apm_bro/lightweight_memory_tracker"
+  autoload :MemoryHelpers, "apm_bro/memory_helpers"
   autoload :JobSubscriber, "apm_bro/job_subscriber"
   autoload :JobSqlTrackingMiddleware, "apm_bro/job_sql_tracking_middleware"
   begin

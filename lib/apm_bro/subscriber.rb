@@ -16,6 +16,24 @@ module ApmBro
         view_events = ApmBro::ViewRenderingSubscriber.stop_request_tracking
         view_performance = ApmBro::ViewRenderingSubscriber.analyze_view_performance(view_events)
         
+        # Stop memory tracking and get collected memory events
+        # Use lightweight tracker by default for better performance
+        memory_events = ApmBro::LightweightMemoryTracker.stop_request_tracking
+        memory_performance = memory_events # Lightweight tracker returns simplified data
+        
+        # Record memory sample for leak detection (only if memory tracking enabled)
+        if ApmBro.configuration.memory_tracking_enabled
+          ApmBro::MemoryLeakDetector.record_memory_sample({
+            memory_usage: memory_usage_mb,
+            gc_count: gc_stats[:count],
+            heap_pages: gc_stats[:heap_allocated_pages],
+            object_count: gc_stats[:heap_live_slots],
+            request_id: data[:request_id],
+            controller: data[:controller],
+            action: data[:action]
+          })
+        end
+        
         # Report exceptions attached to this action (e.g. controller/view errors)
         if data[:exception] || data[:exception_object]
           begin
@@ -68,9 +86,10 @@ module ApmBro
           cache_hits: cache_hits(data),
           cache_misses: cache_misses(data),
           view_events: view_events,
-          view_performance: view_performance
+          view_performance: view_performance,
+          memory_events: memory_events,
+          memory_performance: memory_performance
         }
-        
         client.post_metric(event_name: name, payload: payload)
       end
     end
