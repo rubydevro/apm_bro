@@ -165,12 +165,42 @@ By default, ApmBro uses **lightweight memory tracking** that has minimal perform
 ApmBro.configure do |config|
   config.memory_tracking_enabled = true        # Enable lightweight memory tracking (default: true)
   config.allocation_tracking_enabled = false   # Enable detailed allocation tracking (default: false)
+  
+  # Circuit breaker configuration
+  config.circuit_breaker_enabled = true        # Enable circuit breaker (default: true)
+  config.circuit_breaker_failure_threshold = 3 # Failures before opening circuit (default: 3)
+  config.circuit_breaker_recovery_timeout = 60 # Seconds before trying to close circuit (default: 60)
+  config.circuit_breaker_retry_timeout = 300   # Seconds before retry attempts (default: 300)
 end
 ```
 
 **Performance Impact:**
 - **Lightweight mode**: ~0.1ms overhead per request
 - **Allocation tracking**: ~2-5ms overhead per request (only enable when needed)
+
+## Circuit Breaker Protection
+
+ApmBro includes a circuit breaker pattern to prevent repeated failed requests when the endpoint is unavailable or returns unauthorized responses.
+
+### How It Works
+
+1. **Closed State**: Normal operation, requests are sent
+2. **Open State**: After 3 consecutive failures, circuit opens and blocks requests
+3. **Half-Open State**: After recovery timeout, allows one test request
+4. **Auto-Recovery**: Automatically closes circuit when requests succeed
+
+### Circuit Breaker States
+
+- **Closed**: All requests pass through normally
+- **Open**: All requests are blocked (returns immediately)
+- **Half-Open**: One test request allowed to check if service recovered
+
+### Benefits
+
+- **Prevents API Spam**: Stops sending requests when endpoint is down
+- **Reduces Network Traffic**: Avoids unnecessary HTTP calls
+- **Improves Performance**: Failed requests return immediately
+- **Auto-Recovery**: Automatically resumes when service is back
 
 Each request payload includes:
 - `memory_events` - Detailed memory tracking data

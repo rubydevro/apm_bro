@@ -4,7 +4,7 @@ module ApmBro
   class Configuration
     DEFAULT_ENDPOINT_PATH = "/v1/metrics".freeze
 
-    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled
+    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout
 
     def initialize
       @api_key = nil
@@ -15,6 +15,10 @@ module ApmBro
       @ruby_dev = false
       @memory_tracking_enabled = true
       @allocation_tracking_enabled = false # Disabled by default for performance
+      @circuit_breaker_enabled = true
+      @circuit_breaker_failure_threshold = 3
+      @circuit_breaker_recovery_timeout = 60 # seconds
+      @circuit_breaker_retry_timeout = 300 # seconds
     end
 
     def resolve_api_key
