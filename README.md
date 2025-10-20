@@ -29,6 +29,7 @@ You can set via any of the following (priority top to bottom):
 ```ruby
 config.x.apm_bro.api_key = ENV.fetch("APM_BRO_API_KEY", nil)
 config.x.apm_bro.enabled = true
+config.x.apm_bro.sample_rate = 50  # Track 50% of requests
 ```
 
 - `config/apm_bro.yml` (via `Rails.application.config_for(:apm_bro)`):
@@ -37,12 +38,15 @@ config.x.apm_bro.enabled = true
 default: &default
   api_key: <%= ENV["APM_BRO_API_KEY"] %>
   host: <%= ENV["APM_BRO_HOST"] %>
+  sample_rate: 100
 
 development:
   <<: *default
+  sample_rate: 50  # Track fewer requests in development
 
 production:
   <<: *default
+  sample_rate: 25  # Track 25% of requests in production
 ```
 
 - Rails credentials:
@@ -51,12 +55,14 @@ production:
 apm_bro:
   api_key: YOUR_KEY
   host: https://apm.example.com
+  sample_rate: 50
 ```
 
 - Environment variables:
 
 - `APM_BRO_API_KEY`
 - `APM_BRO_ENDPOINT_URL` (or `APM_BRO_HOST` to be combined with `/v1/metrics`)
+- `APM_BRO_SAMPLE_RATE` (integer 1-100)
 
 ### Manual configuration (non-Rails)
 
@@ -140,6 +146,60 @@ end
 - Only enable when necessary for debugging or analytics
 - Consider your data privacy requirements and regulations
 - The email is included in all request payloads sent to your APM endpoint
+
+## Request Sampling
+
+ApmBro supports configurable request sampling to reduce the volume of metrics sent to your APM endpoint, which is useful for high-traffic applications.
+
+### Configuration
+
+Set the sample rate as a percentage (1-100):
+
+```ruby
+# Track 50% of requests
+ApmBro.configure do |config|
+  config.sample_rate = 50
+end
+
+# Track 10% of requests (useful for high-traffic apps)
+ApmBro.configure do |config|
+  config.sample_rate = 10
+end
+
+# Track all requests (default)
+ApmBro.configure do |config|
+  config.sample_rate = 100
+end
+```
+
+### How It Works
+
+- **Random Sampling**: Each request has a random chance of being tracked based on the sample rate
+- **Consistent Per-Request**: The sampling decision is made once per request and applies to all metrics for that request
+- **Debug Logging**: Skipped requests are logged at debug level for monitoring
+- **Error Tracking**: Errors are still tracked regardless of sampling (unless explicitly disabled)
+
+### Use Cases
+
+- **High-Traffic Applications**: Reduce APM data volume and costs
+- **Development/Staging**: Sample fewer requests to reduce noise
+- **Performance Testing**: Track a subset of requests during load testing
+- **Cost Optimization**: Balance monitoring coverage with data costs
+
+### Example
+
+With `sample_rate = 25`, approximately 25% of requests will be tracked:
+
+```ruby
+# This request might be tracked (25% chance)
+GET /users/123
+
+# This request might be skipped (75% chance)  
+GET /users/456
+
+# Both requests will show in debug logs:
+# "ApmBro sampling: skipping metric process_action.action_controller (sample rate: 25%)"
+```
 
 ## SQL Query Tracking
 
@@ -243,6 +303,9 @@ ApmBro.configure do |config|
   config.circuit_breaker_failure_threshold = 3 # Failures before opening circuit (default: 3)
   config.circuit_breaker_recovery_timeout = 60 # Seconds before trying to close circuit (default: 60)
   config.circuit_breaker_retry_timeout = 300   # Seconds before retry attempts (default: 300)
+  
+  # Sampling configuration
+  config.sample_rate = 100                     # Percentage of requests to track (1-100, default: 100)
 end
 ```
 

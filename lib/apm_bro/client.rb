@@ -18,6 +18,12 @@ module ApmBro
         return
       end
 
+      # Check sampling rate - skip if not selected for sampling
+      unless @configuration.should_sample?
+        log_debug("ApmBro sampling: skipping metric #{event_name} (sample rate: #{@configuration.sample_rate}%)")
+        return
+      end
+
       api_key = @configuration.resolve_api_key
       
       if api_key.nil?

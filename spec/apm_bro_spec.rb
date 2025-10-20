@@ -65,6 +65,117 @@ RSpec.describe ApmBro do
       }
       expect(config.extract_user_email(request_data)).to be_nil
     end
+
+    it "has sample rate configuration" do
+      config = ApmBro::Configuration.new
+      expect(config.sample_rate).to eq(100)
+    end
+
+    it "validates sample rate range" do
+      config = ApmBro::Configuration.new
+      
+      # Valid values
+      config.sample_rate = 1
+      expect(config.sample_rate).to eq(1)
+      
+      config.sample_rate = 50
+      expect(config.sample_rate).to eq(50)
+      
+      config.sample_rate = 100
+      expect(config.sample_rate).to eq(100)
+      
+      # Invalid values
+      expect { config.sample_rate = 0 }.to raise_error(ArgumentError, /Sample rate must be an integer between 1 and 100/)
+      expect { config.sample_rate = 101 }.to raise_error(ArgumentError, /Sample rate must be an integer between 1 and 100/)
+      expect { config.sample_rate = "50" }.to raise_error(ArgumentError, /Sample rate must be an integer between 1 and 100/)
+    end
+
+    it "determines sampling correctly" do
+      config = ApmBro::Configuration.new
+      
+      # 100% sampling should always return true
+      config.sample_rate = 100
+      expect(config.should_sample?).to be true
+      
+      # 0% sampling should always return false
+      config.sample_rate = 0
+      expect(config.should_sample?).to be false
+      
+      # 50% sampling should return true/false randomly
+      config.sample_rate = 50
+      results = 100.times.map { config.should_sample? }
+      expect(results).to include(true)
+      expect(results).to include(false)
+    end
+
+    it "resolves sample rate from environment variables" do
+      config = ApmBro::Configuration.new
+      config.sample_rate = nil # Clear explicit setting
+      
+      # Test with environment variable
+      ENV["APM_BRO_SAMPLE_RATE"] = "25"
+      expect(config.resolve_sample_rate).to eq(25)
+      
+      # Test with invalid environment variable
+      ENV["APM_BRO_SAMPLE_RATE"] = "invalid"
+      expect(config.resolve_sample_rate).to eq(100) # Should fall back to default
+      
+      # Clean up
+      ENV.delete("APM_BRO_SAMPLE_RATE")
+    end
+
+    it "falls back to default when no sample rate is configured" do
+      config = ApmBro::Configuration.new
+      config.sample_rate = nil
+      
+      # Should return default of 100
+      expect(config.resolve_sample_rate).to eq(100)
+    end
+  end
+
+  describe "Client" do
+    let(:config) { ApmBro::Configuration.new }
+    let(:client) { ApmBro::Client.new(config) }
+
+    before do
+      config.enabled = true
+      config.api_key = "test_key"
+      config.sample_rate = 100 # Start with 100% sampling
+    end
+
+    it "sends metrics when sampling is enabled" do
+      # Mock the HTTP request to avoid actual network calls
+      allow_any_instance_of(Net::HTTP).to receive(:request).and_return(double("Response", code: "202", message: "Accepted"))
+      
+      expect { client.post_metric(event_name: "test", payload: {}) }.not_to raise_error
+    end
+
+    it "skips metrics when sampling is disabled" do
+      config.sample_rate = 0
+      
+      # Should not make HTTP requests
+      expect_any_instance_of(Net::HTTP).not_to receive(:request)
+      
+      client.post_metric(event_name: "test", payload: {})
+    end
+
+    it "skips metrics when disabled" do
+      config.enabled = false
+      
+      # Should not make HTTP requests
+      expect_any_instance_of(Net::HTTP).not_to receive(:request)
+      
+      client.post_metric(event_name: "test", payload: {})
+    end
+
+    it "skips metrics when api_key is missing" do
+      config.api_key = nil
+      
+      # Should not make HTTP requests
+      expect_any_instance_of(Net::HTTP).not_to receive(:request)
+      
+      client.post_metric(event_name: "test", payload: {})
+    end
   end
 
   describe "SqlSubscriber" do

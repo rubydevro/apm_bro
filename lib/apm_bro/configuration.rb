@@ -4,7 +4,7 @@ module ApmBro
   class Configuration
     DEFAULT_ENDPOINT_PATH = "/v1/metrics".freeze
 
-    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :user_email_tracking_enabled, :user_email_extractor
+    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :user_email_tracking_enabled, :user_email_extractor, :sample_rate
 
     def initialize
       @api_key = nil
@@ -21,6 +21,7 @@ module ApmBro
       @circuit_breaker_retry_timeout = 300 # seconds
       @user_email_tracking_enabled = false
       @user_email_extractor = nil
+      @sample_rate = 100 # 100% sampling by default
     end
 
     def resolve_api_key
@@ -49,6 +50,37 @@ module ApmBro
       end
 
       ENV["APM_BRO_ENDPOINT_URL"]
+    end
+
+    def resolve_sample_rate
+      # Priority: explicit config -> Rails credentials/settings -> ENV -> default
+      return @sample_rate if present?(@sample_rate)
+
+      if defined?(Rails)
+        rate = fetch_from_rails_settings(%w[apm_bro sample_rate])
+        return rate if present?(rate)
+      end
+
+      env_rate = ENV["APM_BRO_SAMPLE_RATE"]
+      return env_rate.to_i if present?(env_rate) && env_rate.match?(/^\d+$/)
+
+      100 # default
+    end
+
+    def should_sample?
+      sample_rate = resolve_sample_rate
+      return true if sample_rate >= 100
+      return false if sample_rate <= 0
+      
+      # Generate random number 1-100 and check if it's within sample rate
+      rand(1..100) <= sample_rate
+    end
+
+    def sample_rate=(value)
+      unless value.is_a?(Integer) && value >= 1 && value <= 100
+        raise ArgumentError, "Sample rate must be an integer between 1 and 100, got: #{value.inspect}"
+      end
+      @sample_rate = value
     end
 
     private
@@ -140,7 +172,6 @@ module ApmBro
       extract_user_email_from_request(request_data)
     end
 
-    private
 
     def extract_user_email_from_request(request_data)
       # Try to get user email from various common sources
