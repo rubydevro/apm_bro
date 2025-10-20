@@ -201,6 +201,68 @@ GET /users/456
 # "ApmBro sampling: skipping metric process_action.action_controller (sample rate: 25%)"
 ```
 
+## Excluding Controllers and Jobs
+
+You can exclude specific controllers and jobs from APM tracking.
+
+### Configuration
+
+Rails config (`config/application.rb` or environment files):
+
+```ruby
+ApmBro.configure do |config|
+  config.excluded_controllers = [
+    "HealthChecksController",
+    "Admin::*" # wildcard supported
+  ]
+
+  config.excluded_controller_actions = [
+    "UsersController#show",
+    "Admin::ReportsController#index",
+    "Admin::*#*" # wildcard supported for controller and action
+  ]
+
+  config.excluded_jobs = [
+    "ActiveStorage::AnalyzeJob",
+    "Admin::*"
+  ]
+end
+```
+
+YAML config (`config/apm_bro.yml`):
+
+```yml
+default: &default
+  excluded_controllers:
+    - HealthChecksController
+    - Admin::*
+  excluded_controller_actions:
+    - UsersController#show
+    - Admin::ReportsController#index
+    - Admin::*#*
+  excluded_jobs:
+    - ActiveStorage::AnalyzeJob
+    - Admin::*
+
+development:
+  <<: *default
+
+production:
+  <<: *default
+```
+
+Environment variables:
+
+```bash
+export APM_BRO_EXCLUDED_CONTROLLERS="HealthChecksController,Admin::*"
+export APM_BRO_EXCLUDED_CONTROLLER_ACTIONS="UsersController#show,Admin::*#*"
+export APM_BRO_EXCLUDED_JOBS="ActiveStorage::AnalyzeJob,Admin::*"
+```
+
+Notes:
+- Wildcards `*` are supported for controller and action (e.g., `Admin::*#*`).
+- Matching is done against full names like `UsersController`, `Admin::ReportsController#index`, `MyJob`.
+
 ## SQL Query Tracking
 
 ApmBro automatically tracks SQL queries executed during each request and job. Each request payload will include a `sql_queries` array containing:

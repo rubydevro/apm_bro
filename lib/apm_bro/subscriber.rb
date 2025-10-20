@@ -8,6 +8,16 @@ module ApmBro
 
     def self.subscribe!(client: Client.new)
       ActiveSupport::Notifications.subscribe(EVENT_NAME) do |name, started, finished, _unique_id, data|
+        # Skip excluded controllers or controller#action pairs
+        begin
+          controller_name = data[:controller].to_s
+          action_name = data[:action].to_s
+          if ApmBro.configuration.excluded_controller_action?(controller_name, action_name)
+            next
+          end
+        rescue StandardError
+        end
+
         duration_ms = ((finished - started) * 1000.0).round(2)
         # Stop SQL tracking and get collected queries (this was started by the request)
         sql_queries = ApmBro::SqlSubscriber.stop_request_tracking

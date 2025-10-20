@@ -4,7 +4,7 @@ module ApmBro
   class Configuration
     DEFAULT_ENDPOINT_PATH = "/v1/metrics".freeze
 
-    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :user_email_tracking_enabled, :user_email_extractor, :sample_rate
+    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :user_email_tracking_enabled, :user_email_extractor, :sample_rate, :excluded_controllers, :excluded_jobs, :excluded_controller_actions
 
     def initialize
       @api_key = nil
@@ -22,6 +22,9 @@ module ApmBro
       @user_email_tracking_enabled = false
       @user_email_extractor = nil
       @sample_rate = 100 # 100% sampling by default
+      @excluded_controllers = []
+      @excluded_jobs = []
+      @excluded_controller_actions = []
     end
 
     def resolve_api_key
@@ -67,6 +70,47 @@ module ApmBro
       100 # default
     end
 
+    def excluded_job?(job_class_name)
+      list = resolve_excluded_jobs
+      return false if list.nil? || list.empty?
+      list.any? { |pat| match_name_or_pattern?(job_class_name, pat) }
+    end
+
+    def excluded_controller_action?(controller_name, action_name)
+      list = resolve_excluded_controller_actions
+      return false if list.nil? || list.empty?
+      target = "#{controller_name}##{action_name}"
+      list.any? { |pat| match_name_or_pattern?(target, pat) }
+    end
+
+    def resolve_excluded_controller_actions
+      return @excluded_controller_actions if @excluded_controller_actions && !@excluded_controller_actions.empty?
+
+      if defined?(Rails)
+        list = fetch_from_rails_settings(%w[apm_bro excluded_controller_actions])
+        return Array(list) if list
+      end
+
+      env = ENV["APM_BRO_EXCLUDED_CONTROLLER_ACTIONS"]
+      return env.split(",").map(&:strip) if env && !env.strip.empty?
+
+      []
+    end
+
+    def resolve_excluded_jobs
+      return @excluded_jobs if @excluded_jobs && !@excluded_jobs.empty?
+
+      if defined?(Rails)
+        list = fetch_from_rails_settings(%w[apm_bro excluded_jobs])
+        return Array(list) if list
+      end
+
+      env = ENV["APM_BRO_EXCLUDED_JOBS"]
+      return env.split(",").map(&:strip) if env && !env.strip.empty?
+
+      []
+    end
+
     def should_sample?
       sample_rate = resolve_sample_rate
       return true if sample_rate >= 100
@@ -87,6 +131,17 @@ module ApmBro
 
     def present?(value)
       !(value.nil? || (value.respond_to?(:empty?) && value.empty?))
+    end
+
+    def match_name_or_pattern?(name, pattern)
+      return false if name.nil? || pattern.nil?
+      pat = pattern.to_s
+      return !!(name.to_s == pat) unless pat.include?("*")
+      # Convert simple wildcard pattern (e.g., "Admin::*") to regex
+      regex = Regexp.new("^" + Regexp.escape(pat).gsub(/\\\*/,'[^:]*') + "$")
+      !!(name.to_s =~ regex)
+    rescue StandardError
+      false
     end
 
     def fetch_from_rails_settings(path_keys = ["apm_bro", "api_key"])

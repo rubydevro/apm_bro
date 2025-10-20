@@ -10,6 +10,14 @@ module ApmBro
     def self.subscribe!(client: Client.new)
       # Track job execution
       ActiveSupport::Notifications.subscribe(JOB_EVENT_NAME) do |name, started, finished, _unique_id, data|
+        begin
+          job_class_name = data[:job].class.name
+          if ApmBro.configuration.excluded_job?(job_class_name)
+            next
+          end
+        rescue StandardError
+        end
+
         duration_ms = ((finished - started) * 1000.0).round(2)
         
         # Get SQL queries executed during this job
@@ -34,6 +42,14 @@ module ApmBro
 
       # Track job exceptions
       ActiveSupport::Notifications.subscribe(JOB_EXCEPTION_EVENT_NAME) do |name, started, finished, _unique_id, data|
+        begin
+          job_class_name = data[:job].class.name
+          if ApmBro.configuration.excluded_job?(job_class_name)
+            next
+          end
+        rescue StandardError
+        end
+
         duration_ms = ((finished - started) * 1000.0).round(2)
         exception = data[:exception_object]
         

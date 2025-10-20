@@ -263,6 +263,38 @@ RSpec.describe ApmBro do
     end
   end
 
+  describe "Exclusions" do
+    it "excludes specified controllers" do
+      config = ApmBro::Configuration.new
+      config.excluded_controllers = ["Admin::*", "HealthChecksController"]
+
+      expect(config.excluded_controller?("Admin::UsersController")).to be true
+      expect(config.excluded_controller?("HealthChecksController")).to be true
+      expect(config.excluded_controller?("UsersController")).to be false
+    end
+
+    it "excludes specified controller#action pairs" do
+      config = ApmBro::Configuration.new
+      config.excluded_controller_actions = [
+        "UsersController#show",
+        "Admin::*#*"
+      ]
+
+      expect(config.excluded_controller_action?("UsersController", "show")).to be true
+      expect(config.excluded_controller_action?("UsersController", "index")).to be false
+      expect(config.excluded_controller_action?("Admin::ReportsController", "index")).to be true
+    end
+
+    it "excludes specified jobs" do
+      config = ApmBro::Configuration.new
+      config.excluded_jobs = ["ActiveStorage::AnalyzeJob", "Admin::*"]
+
+      expect(config.excluded_job?("ActiveStorage::AnalyzeJob")).to be true
+      expect(config.excluded_job?("Admin::CleanupJob")).to be true
+      expect(config.excluded_job?("UserSignupJob")).to be false
+    end
+  end
+
   describe "JobSubscriber" do
     let(:job_subscriber) { ApmBro::JobSubscriber }
 
