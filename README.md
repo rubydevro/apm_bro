@@ -56,6 +56,7 @@ apm_bro:
   api_key: YOUR_KEY
   host: https://apm.example.com
   sample_rate: 50
+  deploy_id: 2025-10-20-1
 ```
 
 - Environment variables:
@@ -63,6 +64,7 @@ apm_bro:
 - `APM_BRO_API_KEY`
 - `APM_BRO_ENDPOINT_URL` (or `APM_BRO_HOST` to be combined with `/v1/metrics`)
 - `APM_BRO_SAMPLE_RATE` (integer 1-100)
+- `APM_BRO_DEPLOY_ID` (override boot UUID for deploy tracking)
 
 ### Manual configuration (non-Rails)
 

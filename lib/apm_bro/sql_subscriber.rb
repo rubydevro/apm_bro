@@ -9,8 +9,6 @@ module ApmBro
     THREAD_LOCAL_KEY = :apm_bro_sql_queries
 
     def self.subscribe!
-      puts "Subscribing to SQL events"
-      
       ActiveSupport::Notifications.subscribe(SQL_EVENT_NAME) do |name, started, finished, _unique_id, data|
         # Only track queries that are part of the current request
         next unless Thread.current[THREAD_LOCAL_KEY]

@@ -14,27 +14,23 @@ module ApmBro
 
     def post_metric(event_name:, payload:, error: false)
       unless @configuration.enabled
-        log_debug("ApmBro disabled; skipping metric #{event_name}")
         return
       end
 
       # Check sampling rate - skip if not selected for sampling
       unless @configuration.should_sample?
-        log_debug("ApmBro sampling: skipping metric #{event_name} (sample rate: #{@configuration.sample_rate}%)")
         return
       end
 
       api_key = @configuration.resolve_api_key
       
       if api_key.nil?
-        log_debug("ApmBro missing api_key; skipping")
         return
       end
 
       # Check circuit breaker before making request
       if @circuit_breaker && @configuration.circuit_breaker_enabled
         if @circuit_breaker.state == :open
-          log_debug("ApmBro circuit breaker is open; skipping metric #{event_name}")
           return
         end
       end
@@ -71,7 +67,7 @@ module ApmBro
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["Authorization"] = "Bearer #{api_key}"
-      body = { event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, error: error }
+      body = { event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, error: error, revision: @configuration.resolve_deploy_id }
       request.body = JSON.dump(body)
 
       # Fire-and-forget using a short-lived thread to avoid blocking the request cycle.
@@ -84,36 +80,29 @@ module ApmBro
             if @circuit_breaker && @configuration.circuit_breaker_enabled
               if response.is_a?(Net::HTTPSuccess)
                 @circuit_breaker.send(:on_success)
-                log_debug("ApmBro circuit breaker closed - requests resuming") if @circuit_breaker.state == :closed
               else
                 @circuit_breaker.send(:on_failure)
-                log_debug("ApmBro circuit breaker opened after #{@circuit_breaker.failure_count} failures") if @circuit_breaker.state == :open
               end
             end
           else
             # Treat nil response as failure for circuit breaker
             if @circuit_breaker && @configuration.circuit_breaker_enabled
               @circuit_breaker.send(:on_failure)
-              log_debug("ApmBro circuit breaker opened after #{@circuit_breaker.failure_count} failures") if @circuit_breaker.state == :open
             end
           end
           
           response
         rescue Timeout::Error => e
-          log_debug("ApmBro HTTP request timed out: #{e.message}")
           
           # Update circuit breaker on timeout
           if @circuit_breaker && @configuration.circuit_breaker_enabled
             @circuit_breaker.send(:on_failure)
-            log_debug("ApmBro circuit breaker opened after #{@circuit_breaker.failure_count} failures") if @circuit_breaker.state == :open
           end
         rescue StandardError => e
-          log_debug("ApmBro HTTP request failed: #{e.message}")
           
           # Update circuit breaker on exception
           if @circuit_breaker && @configuration.circuit_breaker_enabled
             @circuit_breaker.send(:on_failure)
-            log_debug("ApmBro circuit breaker opened after #{@circuit_breaker.failure_count} failures") if @circuit_breaker.state == :open
           end
         end
       end

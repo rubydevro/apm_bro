@@ -19,6 +19,19 @@ RSpec.describe ApmBro do
       expect(config.user_email_extractor).to be nil
     end
 
+    it "generates a deploy_id by default and can be overridden" do
+      config = ApmBro::Configuration.new
+      id1 = config.resolve_deploy_id
+      expect(id1).to be_a(String)
+      expect(id1.length).to be >= 8
+
+      # Override via ENV
+      ENV["APM_BRO_DEPLOY_ID"] = "test-deploy-123"
+      id2 = ApmBro::Configuration.new.resolve_deploy_id
+      expect(id2).to eq("test-deploy-123")
+      ENV.delete("APM_BRO_DEPLOY_ID")
+    end
+
     it "can extract user email from request data" do
       config = ApmBro::Configuration.new
       config.user_email_tracking_enabled = true

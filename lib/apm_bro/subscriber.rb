@@ -74,7 +74,7 @@ module ApmBro
           rescue StandardError
           end
         end
-        
+
         payload = {
           controller: data[:controller],
           action: data[:action],
@@ -178,9 +178,41 @@ module ApmBro
     end
 
     def self.safe_user_agent(data)
-      return "" unless data[:request]
-      
-      data[:request].user_agent.to_s[0..200] rescue ""
+      begin
+        # Prefer request object if available
+        if data[:request]
+          ua = nil
+          if data[:request].respond_to?(:user_agent)
+            ua = data[:request].user_agent
+          elsif data[:request].respond_to?(:env)
+            ua = data[:request].env && data[:request].env["HTTP_USER_AGENT"]
+          end
+          return ua.to_s[0..200]
+        end
+
+        # Fallback to headers object/hash if present in notification data
+        if data[:headers]
+          headers = data[:headers]
+          if headers.respond_to?(:[])
+            ua = headers["HTTP_USER_AGENT"] || headers["User-Agent"] || headers["user-agent"]
+            return ua.to_s[0..200]
+          elsif headers.respond_to?(:to_h)
+            h = headers.to_h rescue {}
+            ua = h["HTTP_USER_AGENT"] || h["User-Agent"] || h["user-agent"]
+            return ua.to_s[0..200]
+          end
+        end
+
+        # Fallback to env hash if present in notification data
+        if data[:env].is_a?(Hash)
+          ua = data[:env]["HTTP_USER_AGENT"]
+          return ua.to_s[0..200]
+        end
+
+        ""
+      rescue StandardError
+        ""
+      end
     rescue StandardError
       ""
     end
@@ -252,7 +284,7 @@ module ApmBro
     end
 
     def self.extract_user_email(data)
-      ApmBro.configuration.extract_user_email(data)
+      data[:headers].env['warden'].user.email
     rescue StandardError
       nil
     end
