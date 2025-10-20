@@ -69,6 +69,78 @@ end
 ApmBro::Subscriber.subscribe!(client: ApmBro::Client.new)
 ```
 
+## User Email Tracking
+
+ApmBro can track the email of the user making requests, which is useful for debugging user-specific issues and understanding user behavior patterns.
+
+### Configuration
+
+Enable user email tracking in your Rails configuration:
+
+```ruby
+# In config/application.rb or environments/*.rb
+ApmBro.configure do |config|
+  config.user_email_tracking_enabled = true
+end
+```
+
+### Default Email Extraction
+
+By default, ApmBro will try to extract user email from these sources (in order of priority):
+
+1. **`current_user.email`** - Most common in Rails apps with authentication
+2. **Request parameters** - `user_email` or `email` in params
+3. **HTTP headers** - `X-User-Email` or `HTTP_X_USER_EMAIL`
+4. **Session data** - `user_email` in session
+
+### Custom Email Extractor
+
+For more complex scenarios, you can provide a custom extractor:
+
+```ruby
+ApmBro.configure do |config|
+  config.user_email_tracking_enabled = true
+  config.user_email_extractor = ->(request_data) do
+    # Custom logic to extract user email
+    if request_data[:current_user]&.respond_to?(:email)
+      request_data[:current_user].email
+    elsif request_data[:jwt_token]
+      # Extract from JWT token
+      JWT.decode(request_data[:jwt_token], secret)[0]["email"]
+    end
+  end
+end
+```
+
+### Example Payload with User Email
+
+```json
+{
+  "event": "process_action.action_controller",
+  "payload": {
+    "controller": "UsersController",
+    "action": "show",
+    "method": "GET",
+    "path": "/users/123",
+    "status": 200,
+    "duration_ms": 150.25,
+    "user_email": "john.doe@example.com",
+    "rails_env": "production",
+    "host": "myapp.com",
+    "sql_queries": [...],
+    "view_events": [...],
+    "memory_events": [...]
+  }
+}
+```
+
+### Security Considerations
+
+- User email tracking is **disabled by default** for privacy
+- Only enable when necessary for debugging or analytics
+- Consider your data privacy requirements and regulations
+- The email is included in all request payloads sent to your APM endpoint
+
 ## SQL Query Tracking
 
 ApmBro automatically tracks SQL queries executed during each request and job. Each request payload will include a `sql_queries` array containing:

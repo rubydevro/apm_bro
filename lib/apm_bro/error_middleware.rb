@@ -36,6 +36,7 @@ module ApmBro
         message: truncate(exception.message.to_s, 1000),
         backtrace: safe_backtrace(exception),
         occurred_at: Time.now.utc.to_i,
+        user_email: extract_user_email_from_env(env),
         rack:
           {
             method: (req&.request_method),
@@ -102,6 +103,21 @@ module ApmBro
       else
         ""
       end
+    end
+
+    def extract_user_email_from_env(env)
+      return nil unless ApmBro.configuration.user_email_tracking_enabled
+
+      # Try to get user email from various sources in the Rack environment
+      request_data = {
+        request: rack_request(env),
+        session: env["rack.session"],
+        params: env["action_dispatch.request.parameters"] || {}
+      }
+
+      ApmBro.configuration.extract_user_email(request_data)
+    rescue StandardError
+      nil
     end
   end
 end

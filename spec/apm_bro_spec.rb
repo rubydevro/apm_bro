@@ -12,6 +12,59 @@ RSpec.describe ApmBro do
       expect(config.open_timeout).to eq(1.0)
       expect(config.read_timeout).to eq(1.0)
     end
+
+    it "has user email tracking configuration" do
+      config = ApmBro::Configuration.new
+      expect(config.user_email_tracking_enabled).to be false
+      expect(config.user_email_extractor).to be nil
+    end
+
+    it "can extract user email from request data" do
+      config = ApmBro::Configuration.new
+      config.user_email_tracking_enabled = true
+
+      # Test with current_user.email
+      request_data = {
+        current_user: double("User", email: "test@example.com")
+      }
+      expect(config.extract_user_email(request_data)).to eq("test@example.com")
+
+      # Test with params
+      request_data = {
+        params: { "user_email" => "user@example.com" }
+      }
+      expect(config.extract_user_email(request_data)).to eq("user@example.com")
+
+      # Test with headers
+      request = double("Request", headers: { "X-User-Email" => "header@example.com" })
+      request_data = { request: request }
+      expect(config.extract_user_email(request_data)).to eq("header@example.com")
+
+      # Test with session
+      request_data = {
+        session: { "user_email" => "session@example.com" }
+      }
+      expect(config.extract_user_email(request_data)).to eq("session@example.com")
+    end
+
+    it "can use custom user email extractor" do
+      config = ApmBro::Configuration.new
+      config.user_email_tracking_enabled = true
+      config.user_email_extractor = ->(data) { data[:custom_email] }
+
+      request_data = { custom_email: "custom@example.com" }
+      expect(config.extract_user_email(request_data)).to eq("custom@example.com")
+    end
+
+    it "returns nil when user email tracking is disabled" do
+      config = ApmBro::Configuration.new
+      config.user_email_tracking_enabled = false
+
+      request_data = {
+        current_user: double("User", email: "test@example.com")
+      }
+      expect(config.extract_user_email(request_data)).to be_nil
+    end
   end
 
   describe "SqlSubscriber" do

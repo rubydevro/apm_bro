@@ -69,7 +69,7 @@ module ApmBro
       # Always try to get the full call stack for better trace information
       begin
         # Get the current call stack, skip the first few frames (our own code)
-        caller_stack = caller(3, 10) # Skip 3 frames, get up to 10
+        caller_stack = caller(3, 1) # Skip 3 frames, get up to 1
         caller_trace = caller_stack.map do |line|
           # Remove any potential sensitive information from file paths
           line.gsub(/\/[^\/]*(password|secret|key|token)[^\/]*\//i, '/[FILTERED]/')

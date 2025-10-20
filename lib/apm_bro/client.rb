@@ -3,14 +3,13 @@
 require "net/http"
 require "uri"
 require "json"
+require "timeout"
 
 module ApmBro
   class Client
     def initialize(configuration = ApmBro.configuration)
       @configuration = configuration
       @circuit_breaker = create_circuit_breaker
-      puts "Configuration: #{@configuration.inspect}"
-      puts "--------------------------------"
     end
 
     def post_metric(event_name:, payload:, error: false)
@@ -66,25 +65,42 @@ module ApmBro
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["Authorization"] = "Bearer #{api_key}"
-      request.body = JSON.dump({ event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, error: error })
+      body = { event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, error: error }
+      request.body = JSON.dump(body)
 
       # Fire-and-forget using a short-lived thread to avoid blocking the request cycle.
       Thread.new do
         begin
           response = http.request(request)
-          
-          # Update circuit breaker based on response
-          if @circuit_breaker && @configuration.circuit_breaker_enabled
-            if response.is_a?(Net::HTTPSuccess)
-              @circuit_breaker.send(:on_success)
-              log_debug("ApmBro circuit breaker closed - requests resuming") if @circuit_breaker.state == :closed
-            else
+
+          if response
+            # Update circuit breaker based on response
+            if @circuit_breaker && @configuration.circuit_breaker_enabled
+              if response.is_a?(Net::HTTPSuccess)
+                @circuit_breaker.send(:on_success)
+                log_debug("ApmBro circuit breaker closed - requests resuming") if @circuit_breaker.state == :closed
+              else
+                @circuit_breaker.send(:on_failure)
+                log_debug("ApmBro circuit breaker opened after #{@circuit_breaker.failure_count} failures") if @circuit_breaker.state == :open
+              end
+            end
+          else
+            # Treat nil response as failure for circuit breaker
+            if @circuit_breaker && @configuration.circuit_breaker_enabled
               @circuit_breaker.send(:on_failure)
               log_debug("ApmBro circuit breaker opened after #{@circuit_breaker.failure_count} failures") if @circuit_breaker.state == :open
             end
           end
           
           response
+        rescue Timeout::Error => e
+          log_debug("ApmBro HTTP request timed out: #{e.message}")
+          
+          # Update circuit breaker on timeout
+          if @circuit_breaker && @configuration.circuit_breaker_enabled
+            @circuit_breaker.send(:on_failure)
+            log_debug("ApmBro circuit breaker opened after #{@circuit_breaker.failure_count} failures") if @circuit_breaker.state == :open
+          end
         rescue StandardError => e
           log_debug("ApmBro HTTP request failed: #{e.message}")
           
