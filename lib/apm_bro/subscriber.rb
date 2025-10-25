@@ -64,6 +64,7 @@ module ApmBro
               params: safe_params(data),
               user_agent: safe_user_agent(data),
               user_email: extract_user_email(data),
+              user_id: extract_user_id(data),
               exception_class: (exception_class || exception_obj&.class&.name),
               message: (exception_message || exception_obj&.message).to_s[0, 1000],
               backtrace: backtrace,
@@ -93,6 +94,7 @@ module ApmBro
           params: safe_params(data),
           user_agent: safe_user_agent(data),
           user_email: extract_user_email(data),
+          user_id: extract_user_id(data),
           memory_usage: memory_usage_mb,
           gc_stats: gc_stats,
           sql_count: sql_count(data),
@@ -288,6 +290,12 @@ module ApmBro
 
     def self.extract_user_email(data)
       data[:headers].env['warden'].user.email
+    rescue StandardError
+      nil
+    end
+
+    def self.extract_user_id(data)
+      data[:headers].env['warden'].user.id
     rescue StandardError
       nil
     end
