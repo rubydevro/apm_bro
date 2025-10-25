@@ -66,12 +66,15 @@ module ApmBro
               user_email: extract_user_email(data),
               exception_class: (exception_class || exception_obj&.class&.name),
               message: (exception_message || exception_obj&.message).to_s[0, 1000],
-              backtrace: backtrace
+              backtrace: backtrace,
+              error: true
             }
 
             event_name = (exception_class || exception_obj&.class&.name || "exception").to_s
-            client.post_metric(event_name: event_name, payload: error_payload, error: true)
+            client.post_metric(event_name: event_name, payload: error_payload)
           rescue StandardError
+          ensure
+            next
           end
         end
 

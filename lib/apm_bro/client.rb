@@ -12,7 +12,7 @@ module ApmBro
       @circuit_breaker = create_circuit_breaker
     end
 
-    def post_metric(event_name:, payload:, error: false)
+    def post_metric(event_name:, payload:)
       unless @configuration.enabled
         return
       end
@@ -36,7 +36,7 @@ module ApmBro
       end
 
       # Make the HTTP request (async)
-      make_http_request(event_name, payload, error, api_key)
+      make_http_request(event_name, payload, api_key)
 
       nil
     end
@@ -53,7 +53,7 @@ module ApmBro
       )
     end
 
-    def make_http_request(event_name, payload, error, api_key)
+    def make_http_request(event_name, payload, api_key)
       endpoint_url = @configuration.respond_to?(:ruby_dev) && @configuration.ruby_dev ?
           'http://localhost:3100/apm/v1/metrics' :
           "https://deadbro.aberatii.com/apm/v1/metrics"
@@ -67,7 +67,7 @@ module ApmBro
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["Authorization"] = "Bearer #{api_key}"
-      body = { event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, error: error, revision: @configuration.resolve_deploy_id }
+      body = { event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, revision: @configuration.resolve_deploy_id }
       request.body = JSON.dump(body)
 
       # Fire-and-forget using a short-lived thread to avoid blocking the request cycle.
