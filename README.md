@@ -9,7 +9,7 @@ To use the gem you need to have a free account with [DeadBro - Rails APM](https:
 Add to your Gemfile:
 
 ```ruby
-gem "apm_bro", git: "https://github.com/rubydev/apm_bro.git"
+gem "apm_bro", git: "https://github.com/rubydevro/apm_bro.git"
 ```
 
 ## Usage
@@ -208,4 +208,4 @@ To install this gem onto your local machine, run `bundle exec rake install`. To 
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/rubydev/apm_bro.
+Bug reports and pull requests are welcome on GitHub at https://github.com/rubydevro/apm_bro.
