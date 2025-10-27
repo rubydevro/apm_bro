@@ -74,6 +74,14 @@ module ApmBro
       @state = HALF_OPEN
     end
 
+    def should_attempt_reset?
+      return false unless @last_failure_time
+      
+      # Try to reset after recovery timeout
+      elapsed = Time.now - @last_failure_time
+      elapsed >= @recovery_timeout
+    end
+
     private
 
     def execute_with_monitoring(&block)
@@ -112,14 +120,6 @@ module ApmBro
       elsif @failure_count >= @failure_threshold
         @state = OPEN
       end
-    end
-
-    def should_attempt_reset?
-      return false unless @last_failure_time
-      
-      # Try to reset after recovery timeout
-      elapsed = Time.now - @last_failure_time
-      elapsed >= @recovery_timeout
     end
   end
 end
