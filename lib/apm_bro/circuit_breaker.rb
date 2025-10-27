@@ -70,6 +70,10 @@ module ApmBro
       @last_failure_time = Time.now
     end
 
+    def transition_to_half_open!
+      @state = HALF_OPEN
+    end
+
     private
 
     def execute_with_monitoring(&block)
@@ -102,7 +106,10 @@ module ApmBro
       @failure_count += 1
       @last_failure_time = Time.now
       
-      if @failure_count >= @failure_threshold
+      # If we're in half-open state and get a failure, go back to open
+      if @state == HALF_OPEN
+        @state = OPEN
+      elsif @failure_count >= @failure_threshold
         @state = OPEN
       end
     end
@@ -111,16 +118,8 @@ module ApmBro
       return false unless @last_failure_time
       
       # Try to reset after recovery timeout
-      if Time.now - @last_failure_time >= @recovery_timeout
-        return true
-      end
-      
-      # Also try periodic retries during retry timeout period
-      if @last_failure_time && Time.now - @last_failure_time >= @retry_timeout
-        return true
-      end
-      
-      false
+      elapsed = Time.now - @last_failure_time
+      elapsed >= @recovery_timeout
     end
   end
 end

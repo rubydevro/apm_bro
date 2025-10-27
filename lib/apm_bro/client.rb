@@ -31,7 +31,12 @@ module ApmBro
       # Check circuit breaker before making request
       if @circuit_breaker && @configuration.circuit_breaker_enabled
         if @circuit_breaker.state == :open
-          return
+          # Check if we should attempt a reset to half-open state
+          if @circuit_breaker.should_attempt_reset?
+            @circuit_breaker.transition_to_half_open!
+          else
+            return
+          end
         end
       end
 
@@ -56,7 +61,7 @@ module ApmBro
     def make_http_request(event_name, payload, api_key)
       endpoint_url = @configuration.respond_to?(:ruby_dev) && @configuration.ruby_dev ?
           'http://localhost:3100/apm/v1/metrics' :
-          "https://deadbro.aberatii.com/apm/v1/metrics"
+          "https://www.deadbro.com/apm/v1/metrics"
 
       uri = URI.parse(endpoint_url)
       http = Net::HTTP.new(uri.host, uri.port)
