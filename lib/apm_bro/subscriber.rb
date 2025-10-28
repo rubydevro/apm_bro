@@ -26,10 +26,33 @@ module ApmBro
         view_events = ApmBro::ViewRenderingSubscriber.stop_request_tracking
         view_performance = ApmBro::ViewRenderingSubscriber.analyze_view_performance(view_events)
         
-        # Stop memory tracking and get collected memory events
-        # Use lightweight tracker by default for better performance
-        memory_events = ApmBro::LightweightMemoryTracker.stop_request_tracking
-        memory_performance = memory_events # Lightweight tracker returns simplified data
+        # Stop memory tracking and get collected memory data
+        if ApmBro.configuration.allocation_tracking_enabled && defined?(ApmBro::MemoryTrackingSubscriber)
+          detailed_memory = ApmBro::MemoryTrackingSubscriber.stop_request_tracking
+          memory_performance = ApmBro::MemoryTrackingSubscriber.analyze_memory_performance(detailed_memory)
+          # Keep memory_events compact and user-friendly (no large raw arrays)
+          memory_events = {
+            memory_before: detailed_memory[:memory_before],
+            memory_after: detailed_memory[:memory_after],
+            duration_seconds: detailed_memory[:duration_seconds],
+            allocations_count: (detailed_memory[:allocations] || []).length,
+            memory_snapshots_count: (detailed_memory[:memory_snapshots] || []).length,
+            large_objects_count: (detailed_memory[:large_objects] || []).length
+          }
+        else
+          lightweight_memory = ApmBro::LightweightMemoryTracker.stop_request_tracking
+          # Separate raw readings from derived performance metrics to avoid duplicating data
+          memory_events = {
+            memory_before: lightweight_memory[:memory_before],
+            memory_after: lightweight_memory[:memory_after]
+          }
+          memory_performance = {
+            memory_growth_mb: lightweight_memory[:memory_growth_mb],
+            gc_count_increase: lightweight_memory[:gc_count_increase],
+            heap_pages_increase: lightweight_memory[:heap_pages_increase],
+            duration_seconds: lightweight_memory[:duration_seconds]
+          }
+        end
         
         # Record memory sample for leak detection (only if memory tracking enabled)
         if ApmBro.configuration.memory_tracking_enabled

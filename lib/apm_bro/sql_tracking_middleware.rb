@@ -25,6 +25,12 @@ module ApmBro
         ApmBro::LightweightMemoryTracker.start_request_tracking
       end
 
+      # Start detailed memory tracking when allocation tracking is enabled
+      if ApmBro.configuration.allocation_tracking_enabled && defined?(ApmBro::MemoryTrackingSubscriber)
+        puts "Starting detailed memory tracking for request: #{env['REQUEST_METHOD']} #{env['PATH_INFO']}"
+        ApmBro::MemoryTrackingSubscriber.start_request_tracking
+      end
+
       # Start outgoing HTTP accumulation for this request
       Thread.current[:apm_bro_http_events] = []
 

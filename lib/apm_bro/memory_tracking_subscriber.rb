@@ -8,17 +8,18 @@ module ApmBro
     ALLOCATION_EVENT = "object_allocations.active_support".freeze
     
     THREAD_LOCAL_KEY = :apm_bro_memory_events
+    # Consider objects larger than this many bytes as "large"
     LARGE_OBJECT_THRESHOLD = 1_000_000 # 1MB threshold for large objects
     
     # Performance optimization settings
-    ALLOCATION_SAMPLING_RATE = 0.1 # Only track 10% of allocations
+    ALLOCATION_SAMPLING_RATE = 1 # Track all when enabled (adjust in production)
     MAX_ALLOCATIONS_PER_REQUEST = 1000 # Limit allocations tracked per request
-    ENABLE_ALLOCATION_TRACKING = false # Disabled by default for performance
+    LARGE_OBJECT_SAMPLE_RATE = 0.01 # Sample 1% of live objects to estimate large ones
+    MAX_LARGE_OBJECTS = 50 # Cap number of large objects captured per request
 
     def self.subscribe!(client: Client.new)
       # Only enable allocation tracking if explicitly enabled (expensive!)
       return unless ApmBro.configuration.allocation_tracking_enabled
-      
       if defined?(ActiveSupport::Notifications) && ActiveSupport::Notifications.notifier.respond_to?(:subscribe)
         begin
           # Subscribe to object allocation events with sampling
@@ -45,7 +46,8 @@ module ApmBro
         large_objects: [],
         gc_before: gc_stats,
         memory_before: memory_usage_mb,
-        start_time: Time.now.utc.to_i
+        start_time: Time.now.utc.to_i,
+        object_counts_before: count_objects_snapshot
       }
     end
 
@@ -58,6 +60,12 @@ module ApmBro
         events[:memory_after] = memory_usage_mb
         events[:end_time] = Time.now.utc.to_i
         events[:duration_seconds] = events[:end_time] - events[:start_time]
+        events[:object_counts_after] = count_objects_snapshot
+
+        # Fallback large object detection via ObjectSpace sampling
+        if (events[:large_objects].nil? || events[:large_objects].empty?) && object_space_available?
+          events[:large_objects] = sample_large_objects
+        end
       end
       
       events || {}
@@ -145,6 +153,17 @@ module ApmBro
       
       # Calculate GC efficiency
       gc_efficiency = calculate_gc_efficiency(memory_events[:gc_before], memory_events[:gc_after])
+
+      # Analyze object type deltas (by Ruby object type, not class)
+      object_type_deltas = {}
+      if memory_events[:object_counts_before].is_a?(Hash) && memory_events[:object_counts_after].is_a?(Hash)
+        before = memory_events[:object_counts_before]
+        after = memory_events[:object_counts_after]
+        keys = (before.keys + after.keys).uniq
+        keys.each do |k|
+          object_type_deltas[k] = (after[k] || 0) - (before[k] || 0)
+        end
+      end
       
       {
         memory_growth_mb: memory_growth.round(2),
@@ -164,7 +183,8 @@ module ApmBro
         large_objects: large_object_analysis,
         memory_trends: memory_trends,
         gc_efficiency: gc_efficiency,
-        memory_snapshots_count: snapshots.count
+        memory_snapshots_count: snapshots.count,
+        object_type_deltas: top_object_type_deltas(object_type_deltas, limit: 10)
       }
     end
 
@@ -178,6 +198,51 @@ module ApmBro
         by_class: large_objects.group_by { |obj| obj[:class_name] }
                               .transform_values(&:count)
       }
+    end
+
+    def self.top_object_type_deltas(deltas, limit: 10)
+      return {} unless deltas.is_a?(Hash)
+      deltas.sort_by { |_, v| -v.abs }.first(limit).to_h
+    end
+
+    def self.object_space_available?
+      defined?(ObjectSpace) && ObjectSpace.respond_to?(:each_object) && ObjectSpace.respond_to?(:memsize_of)
+    end
+
+    def self.sample_large_objects
+      results = []
+      return results unless object_space_available?
+
+      begin
+        # Sample across common heap object types
+        ObjectSpace.each_object do |obj|
+          # Randomly sample to control overhead
+          next unless rand < LARGE_OBJECT_SAMPLE_RATE
+
+          size = ObjectSpace.memsize_of(obj) rescue 0
+          next unless size && size > LARGE_OBJECT_THRESHOLD
+
+          klass = (obj.respond_to?(:class) && obj.class) ? obj.class.name : "Unknown" rescue "Unknown"
+          results << { class_name: klass, size: size, size_mb: (size / 1_000_000.0).round(2) }
+
+          break if results.length >= MAX_LARGE_OBJECTS
+        end
+      rescue StandardError
+        # Best-effort only
+      end
+
+      # Sort largest first and keep top N
+      results.sort_by { |h| -h[:size] }.first(MAX_LARGE_OBJECTS)
+    end
+
+    def self.count_objects_snapshot
+      if defined?(ObjectSpace) && ObjectSpace.respond_to?(:count_objects)
+        ObjectSpace.count_objects.dup
+      else
+        {}
+      end
+    rescue StandardError
+      {}
     end
 
     def self.analyze_memory_trends(snapshots)
