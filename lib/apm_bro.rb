@@ -9,6 +9,8 @@ module ApmBro
   autoload :Subscriber, "apm_bro/subscriber"
   autoload :SqlSubscriber, "apm_bro/sql_subscriber"
   autoload :SqlTrackingMiddleware, "apm_bro/sql_tracking_middleware"
+  autoload :CacheSubscriber, "apm_bro/cache_subscriber"
+  autoload :RedisSubscriber, "apm_bro/redis_subscriber"
   autoload :ViewRenderingSubscriber, "apm_bro/view_rendering_subscriber"
   autoload :MemoryTrackingSubscriber, "apm_bro/memory_tracking_subscriber"
   autoload :MemoryLeakDetector, "apm_bro/memory_leak_detector"

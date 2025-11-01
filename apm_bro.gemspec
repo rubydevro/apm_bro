@@ -17,5 +17,5 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = spec.homepage
 
   spec.require_paths = ["lib"]
-
+  spec.files = Dir["lib/**/*", "*.md", "*.txt"]
 end
