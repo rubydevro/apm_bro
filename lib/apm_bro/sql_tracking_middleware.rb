@@ -13,6 +13,18 @@ module ApmBro
         ApmBro::SqlSubscriber.start_request_tracking
       end
 
+      # Start cache tracking for this request
+      if defined?(ApmBro::CacheSubscriber)
+        puts "Starting cache tracking for request: #{env['REQUEST_METHOD']} #{env['PATH_INFO']}"
+        ApmBro::CacheSubscriber.start_request_tracking
+      end
+
+      # Start Redis tracking for this request
+      if defined?(ApmBro::RedisSubscriber)
+        puts "Starting redis tracking for request: #{env['REQUEST_METHOD']} #{env['PATH_INFO']}"
+        ApmBro::RedisSubscriber.start_request_tracking
+      end
+
       # Start view rendering tracking for this request
       if defined?(ApmBro::ViewRenderingSubscriber)
         puts "Starting view rendering tracking for request: #{env['REQUEST_METHOD']} #{env['PATH_INFO']}"
@@ -40,6 +52,16 @@ module ApmBro
       if defined?(ApmBro::SqlSubscriber)
         queries = Thread.current[:apm_bro_sql_queries]
         Thread.current[:apm_bro_sql_queries] = nil
+      end
+
+      if defined?(ApmBro::CacheSubscriber)
+        cache_events = Thread.current[:apm_bro_cache_events]
+        Thread.current[:apm_bro_cache_events] = nil
+      end
+
+      if defined?(ApmBro::RedisSubscriber)
+        redis_events = Thread.current[:apm_bro_redis_events]
+        Thread.current[:apm_bro_redis_events] = nil
       end
 
       if defined?(ApmBro::ViewRenderingSubscriber)

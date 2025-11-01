@@ -22,6 +22,10 @@ module ApmBro
         # Stop SQL tracking and get collected queries (this was started by the request)
         sql_queries = ApmBro::SqlSubscriber.stop_request_tracking
         
+        # Stop cache and redis tracking
+        cache_events = defined?(ApmBro::CacheSubscriber) ? ApmBro::CacheSubscriber.stop_request_tracking : []
+        redis_events = defined?(ApmBro::RedisSubscriber) ? ApmBro::RedisSubscriber.stop_request_tracking : []
+
         # Stop view rendering tracking and get collected view events
         view_events = ApmBro::ViewRenderingSubscriber.stop_request_tracking
         view_performance = ApmBro::ViewRenderingSubscriber.analyze_view_performance(view_events)
@@ -123,6 +127,8 @@ module ApmBro
           sql_count: sql_count(data),
           sql_queries: sql_queries,
           http_outgoing: (Thread.current[:apm_bro_http_events] || []),
+          cache_events: cache_events,
+          redis_events: redis_events,
           cache_hits: cache_hits(data),
           cache_misses: cache_misses(data),
           view_events: view_events,

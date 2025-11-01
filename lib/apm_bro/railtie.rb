@@ -31,6 +31,14 @@ module ApmBro
           require "apm_bro/sql_subscriber"
           ApmBro::SqlSubscriber.subscribe!
           
+          # Install Rails cache tracking
+          require "apm_bro/cache_subscriber"
+          ApmBro::CacheSubscriber.subscribe!
+
+          # Install Redis tracking (if Redis-related events are present)
+          require "apm_bro/redis_subscriber"
+          ApmBro::RedisSubscriber.subscribe!
+
           # Install view rendering tracking
           require "apm_bro/view_rendering_subscriber"
           ApmBro::ViewRenderingSubscriber.subscribe!(client: ApmBro::Client.new)
