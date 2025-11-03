@@ -36,4 +36,13 @@ module ApmBro
   def self.reset_configuration!
     @configuration = Configuration.new
   end
+
+  # Returns a process-stable deploy identifier used when none is configured.
+  # Memoized per-Ruby process to avoid generating a new UUID per request.
+  def self.process_deploy_id
+    @process_deploy_id ||= begin
+      require "securerandom"
+      SecureRandom.uuid
+    end
+  end
 end

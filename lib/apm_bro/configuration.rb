@@ -80,11 +80,15 @@ module ApmBro
         return val if present?(val)
       end
 
-      env_val = ENV["HEROKU_SLUG_COMMIT"]
+      # Prefer explicit env var, then common platform-specific var
+      env_val = ENV["GIT_REV"]
       return env_val if present?(env_val)
 
-      require "securerandom"
-      SecureRandom.uuid
+      heroku_val = ENV["HEROKU_SLUG_COMMIT"]
+      return heroku_val if present?(heroku_val)
+
+      # Fall back to a process-stable ID
+      ApmBro.process_deploy_id
     end
 
     def excluded_job?(job_class_name)
