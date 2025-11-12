@@ -51,7 +51,8 @@ module ApmBro
           },
         rails_env: safe_rails_env,
         app: safe_app_name,
-        pid: Process.pid
+        pid: Process.pid,
+        logs: ApmBro.logger.logs
       }
     end
 

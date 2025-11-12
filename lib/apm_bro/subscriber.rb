@@ -95,7 +95,8 @@ module ApmBro
               exception_class: (exception_class || exception_obj&.class&.name),
               message: (exception_message || exception_obj&.message).to_s[0, 1000],
               backtrace: backtrace,
-              error: true
+              error: true,
+              logs: ApmBro.logger.logs
             }
 
             event_name = (exception_class || exception_obj&.class&.name || "exception").to_s
@@ -134,7 +135,8 @@ module ApmBro
           view_events: view_events,
           view_performance: view_performance,
           memory_events: memory_events,
-          memory_performance: memory_performance
+          memory_performance: memory_performance,
+          logs: ApmBro.logger.logs
         }
         client.post_metric(event_name: name, payload: payload)
       end

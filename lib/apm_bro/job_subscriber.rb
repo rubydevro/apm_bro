@@ -34,7 +34,8 @@ module ApmBro
           rails_env: safe_rails_env,
           host: safe_host,
           memory_usage: memory_usage_mb,
-          gc_stats: gc_stats
+          gc_stats: gc_stats,
+          logs: ApmBro.logger.logs
         }
         
         client.post_metric(event_name: name, payload: payload)
@@ -70,7 +71,8 @@ module ApmBro
           rails_env: safe_rails_env,
           host: safe_host,
           memory_usage: memory_usage_mb,
-          gc_stats: gc_stats
+          gc_stats: gc_stats,
+          logs: ApmBro.logger.logs
         }
         
         event_name = exception&.class&.name || "ActiveJob::Exception"

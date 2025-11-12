@@ -7,6 +7,9 @@ module ApmBro
     end
 
     def call(env)
+      # Clear logs for this request
+      ApmBro.logger.clear
+
       # Start SQL tracking for this request
       if defined?(ApmBro::SqlSubscriber)
         puts "Starting SQL tracking for request: #{env['REQUEST_METHOD']} #{env['PATH_INFO']}"

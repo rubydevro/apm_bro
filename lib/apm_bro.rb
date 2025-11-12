@@ -18,6 +18,7 @@ module ApmBro
   autoload :MemoryHelpers, "apm_bro/memory_helpers"
   autoload :JobSubscriber, "apm_bro/job_subscriber"
   autoload :JobSqlTrackingMiddleware, "apm_bro/job_sql_tracking_middleware"
+  autoload :Logger, "apm_bro/logger"
   begin
     require "apm_bro/railtie"
   rescue LoadError
@@ -44,5 +45,10 @@ module ApmBro
       require "securerandom"
       SecureRandom.uuid
     end
+  end
+
+  # Returns the logger instance for storing and retrieving log messages
+  def self.logger
+    @logger ||= Logger.new
   end
 end
