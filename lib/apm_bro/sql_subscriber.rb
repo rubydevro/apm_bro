@@ -9,6 +9,7 @@ module ApmBro
     THREAD_LOCAL_KEY = :apm_bro_sql_queries
     THREAD_LOCAL_ALLOC_START_KEY = :apm_bro_sql_alloc_start
     THREAD_LOCAL_ALLOC_RESULTS_KEY = :apm_bro_sql_alloc_results
+    THREAD_LOCAL_BACKTRACE_KEY = :apm_bro_sql_backtraces
 
     def self.subscribe!
       # Subscribe with a start/finish listener to measure allocations per query
@@ -20,13 +21,19 @@ module ApmBro
       end
 
       ActiveSupport::Notifications.subscribe(SQL_EVENT_NAME) do |name, started, finished, _unique_id, data|
+        next if data[:name] == "SCHEMA"
         # Only track queries that are part of the current request
         next unless Thread.current[THREAD_LOCAL_KEY]
         unique_id = _unique_id
         allocations = nil
+        captured_backtrace = nil
         begin
           alloc_results = Thread.current[THREAD_LOCAL_ALLOC_RESULTS_KEY]
           allocations = alloc_results && alloc_results.delete(unique_id)
+          
+          # Get the captured backtrace from when the query started
+          backtrace_map = Thread.current[THREAD_LOCAL_BACKTRACE_KEY]
+          captured_backtrace = backtrace_map && backtrace_map.delete(unique_id)
         rescue StandardError
         end
 
@@ -36,7 +43,7 @@ module ApmBro
           duration_ms: ((finished - started) * 1000.0).round(2),
           cached: data[:cached] || false,
           connection_id: data[:connection_id],
-          trace: safe_query_trace(data),
+          trace: safe_query_trace(data, captured_backtrace),
           allocations: allocations
         }
         # Add to thread-local storage
@@ -49,6 +56,7 @@ module ApmBro
       Thread.current[THREAD_LOCAL_KEY] = []
       Thread.current[THREAD_LOCAL_ALLOC_START_KEY] = {}
       Thread.current[THREAD_LOCAL_ALLOC_RESULTS_KEY] = {}
+      Thread.current[THREAD_LOCAL_BACKTRACE_KEY] = {}
     end
 
     def self.stop_request_tracking
@@ -56,6 +64,7 @@ module ApmBro
       Thread.current[THREAD_LOCAL_KEY] = nil
       Thread.current[THREAD_LOCAL_ALLOC_START_KEY] = nil
       Thread.current[THREAD_LOCAL_ALLOC_RESULTS_KEY] = nil
+      Thread.current[THREAD_LOCAL_BACKTRACE_KEY] = nil
       queries || []
     end
 
@@ -75,7 +84,7 @@ module ApmBro
       sql.length > 1000 ? sql[0..1000] + "..." : sql
     end
 
-    def self.safe_query_trace(data)
+    def self.safe_query_trace(data, captured_backtrace = nil)
       return [] unless data.is_a?(Hash)
 
       # Build trace from available data fields
@@ -86,24 +95,64 @@ module ApmBro
         trace << "#{data[:filename]}:#{data[:line]}:in `#{data[:method]}'"
       end
       
-      # Always try to get the full call stack for better trace information
-      begin
-        # Get the current call stack, skip the first few frames (our own code)
-        caller_stack = caller(3, 0) # Skip 3 frames, get up to 1
-        caller_trace = caller_stack.map do |line|
+      # Use the captured backtrace from when the query started (most accurate)
+      if captured_backtrace && captured_backtrace.is_a?(Array) && !captured_backtrace.empty?
+        # Filter to only include frames that contain "app/" (application code)
+        app_frames = captured_backtrace.select do |frame|
+          frame.include?('/app/')
+        end
+        
+        caller_trace = app_frames.map do |line|
           # Remove any potential sensitive information from file paths
           line.gsub(/\/[^\/]*(password|secret|key|token)[^\/]*\//i, '/[FILTERED]/')
         end
         
-        # Combine the immediate location with the call stack
         trace.concat(caller_trace)
-      rescue StandardError
-        # If caller fails, we still have the immediate location
+      else
+        # Fallback: try to get backtrace from current context
+        begin
+          # Get all available frames - we'll filter to find application code
+          all_frames = Thread.current.backtrace || []
+          
+          if all_frames.empty?
+            # Fallback to caller_locations if backtrace is empty
+            locations = caller_locations(1, 50)
+            all_frames = locations.map { |loc| "#{loc.path}:#{loc.lineno}:in `#{loc.label}'" } if locations
+          end
+          
+          # Filter to only include frames that contain "app/" (application code)
+          app_frames = all_frames.select do |frame|
+            frame.include?('/app/')
+          end
+          
+          caller_trace = app_frames.map do |line|
+            line.gsub(/\/[^\/]*(password|secret|key|token)[^\/]*\//i, '/[FILTERED]/')
+          end
+          
+          trace.concat(caller_trace)
+        rescue StandardError
+          # If backtrace fails, try caller as fallback
+          begin
+            caller_stack = caller(20, 50) # Get more frames to find app/ frames
+            app_frames = caller_stack.select { |frame| frame.include?('/app/') }
+            caller_trace = app_frames.map do |line|
+              line.gsub(/\/[^\/]*(password|secret|key|token)[^\/]*\//i, '/[FILTERED]/')
+            end
+            trace.concat(caller_trace)
+          rescue StandardError
+            # If caller also fails, we still have the immediate location
+          end
+        end
       end
       
-      # If we have a backtrace, use it (but it's usually nil for SQL events)
+      # If we have a backtrace in the data, use it (but it's usually nil for SQL events)
       if data[:backtrace] && data[:backtrace].is_a?(Array)
-        backtrace_trace = data[:backtrace].first(5).map do |line|
+        # Filter to only include frames that contain "app/"
+        app_backtrace = data[:backtrace].select do |line|
+          line.is_a?(String) && line.include?('/app/')
+        end
+        
+        backtrace_trace = app_backtrace.map do |line|
           case line
           when String
             line.gsub(/\/[^\/]*(password|secret|key|token)[^\/]*\//i, '/[FILTERED]/')
@@ -114,8 +163,8 @@ module ApmBro
         trace.concat(backtrace_trace)
       end
       
-      # Remove duplicates and limit the number of frames
-      trace.uniq.first(10).map do |line|
+      # Remove duplicates and return all app/ frames (no limit)
+      trace.uniq.map do |line|
         case line
         when String
           # Remove any potential sensitive information from file paths
@@ -138,6 +187,15 @@ module ApmBro
       begin
         map = (Thread.current[ApmBro::SqlSubscriber::THREAD_LOCAL_ALLOC_START_KEY] ||= {})
         map[id] = GC.stat[:total_allocated_objects] if defined?(GC) && GC.respond_to?(:stat)
+        
+        # Capture the backtrace at query start time (before notification system processes it)
+        # This gives us the actual call stack where the SQL was executed
+        backtrace_map = (Thread.current[ApmBro::SqlSubscriber::THREAD_LOCAL_BACKTRACE_KEY] ||= {})
+        captured_backtrace = Thread.current.backtrace
+        if captured_backtrace && captured_backtrace.is_a?(Array)
+          # Skip the first few frames (our listener code) to get to the actual query execution
+          backtrace_map[id] = captured_backtrace[5..-1] || captured_backtrace
+        end
       rescue StandardError
       end
     end

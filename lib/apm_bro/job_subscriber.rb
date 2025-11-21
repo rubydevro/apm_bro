@@ -23,6 +23,34 @@ module ApmBro
         # Get SQL queries executed during this job
         sql_queries = ApmBro::SqlSubscriber.stop_request_tracking
         
+        # Stop memory tracking and get collected memory data
+        if ApmBro.configuration.allocation_tracking_enabled && defined?(ApmBro::MemoryTrackingSubscriber)
+          detailed_memory = ApmBro::MemoryTrackingSubscriber.stop_request_tracking
+          memory_performance = ApmBro::MemoryTrackingSubscriber.analyze_memory_performance(detailed_memory)
+          # Keep memory_events compact and user-friendly (no large raw arrays)
+          memory_events = {
+            memory_before: detailed_memory[:memory_before],
+            memory_after: detailed_memory[:memory_after],
+            duration_seconds: detailed_memory[:duration_seconds],
+            allocations_count: (detailed_memory[:allocations] || []).length,
+            memory_snapshots_count: (detailed_memory[:memory_snapshots] || []).length,
+            large_objects_count: (detailed_memory[:large_objects] || []).length
+          }
+        else
+          lightweight_memory = ApmBro::LightweightMemoryTracker.stop_request_tracking
+          # Separate raw readings from derived performance metrics to avoid duplicating data
+          memory_events = {
+            memory_before: lightweight_memory[:memory_before],
+            memory_after: lightweight_memory[:memory_after]
+          }
+          memory_performance = {
+            memory_growth_mb: lightweight_memory[:memory_growth_mb],
+            gc_count_increase: lightweight_memory[:gc_count_increase],
+            heap_pages_increase: lightweight_memory[:heap_pages_increase],
+            duration_seconds: lightweight_memory[:duration_seconds]
+          }
+        end
+        
         payload = {
           job_class: data[:job].class.name,
           job_id: data[:job].job_id,
@@ -35,6 +63,8 @@ module ApmBro
           host: safe_host,
           memory_usage: memory_usage_mb,
           gc_stats: gc_stats,
+          memory_events: memory_events,
+          memory_performance: memory_performance,
           logs: ApmBro.logger.logs
         }
         
@@ -57,6 +87,34 @@ module ApmBro
         # Get SQL queries executed during this job
         sql_queries = ApmBro::SqlSubscriber.stop_request_tracking
         
+        # Stop memory tracking and get collected memory data
+        if ApmBro.configuration.allocation_tracking_enabled && defined?(ApmBro::MemoryTrackingSubscriber)
+          detailed_memory = ApmBro::MemoryTrackingSubscriber.stop_request_tracking
+          memory_performance = ApmBro::MemoryTrackingSubscriber.analyze_memory_performance(detailed_memory)
+          # Keep memory_events compact and user-friendly (no large raw arrays)
+          memory_events = {
+            memory_before: detailed_memory[:memory_before],
+            memory_after: detailed_memory[:memory_after],
+            duration_seconds: detailed_memory[:duration_seconds],
+            allocations_count: (detailed_memory[:allocations] || []).length,
+            memory_snapshots_count: (detailed_memory[:memory_snapshots] || []).length,
+            large_objects_count: (detailed_memory[:large_objects] || []).length
+          }
+        else
+          lightweight_memory = ApmBro::LightweightMemoryTracker.stop_request_tracking
+          # Separate raw readings from derived performance metrics to avoid duplicating data
+          memory_events = {
+            memory_before: lightweight_memory[:memory_before],
+            memory_after: lightweight_memory[:memory_after]
+          }
+          memory_performance = {
+            memory_growth_mb: lightweight_memory[:memory_growth_mb],
+            gc_count_increase: lightweight_memory[:gc_count_increase],
+            heap_pages_increase: lightweight_memory[:heap_pages_increase],
+            duration_seconds: lightweight_memory[:duration_seconds]
+          }
+        end
+        
         payload = {
           job_class: data[:job].class.name,
           job_id: data[:job].job_id,
@@ -72,6 +130,8 @@ module ApmBro
           host: safe_host,
           memory_usage: memory_usage_mb,
           gc_stats: gc_stats,
+          memory_events: memory_events,
+          memory_performance: memory_performance,
           logs: ApmBro.logger.logs
         }
         
