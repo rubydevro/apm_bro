@@ -99,7 +99,7 @@ module ApmBro
       if captured_backtrace && captured_backtrace.is_a?(Array) && !captured_backtrace.empty?
         # Filter to only include frames that contain "app/" (application code)
         app_frames = captured_backtrace.select do |frame|
-          frame.include?('/app/')
+          frame.include?('app/') && !frame.include?('/vendor/')
         end
         
         caller_trace = app_frames.map do |line|
@@ -122,7 +122,7 @@ module ApmBro
           
           # Filter to only include frames that contain "app/" (application code)
           app_frames = all_frames.select do |frame|
-            frame.include?('/app/')
+            frame.include?('app/') && !frame.include?('/vendor/')
           end
           
           caller_trace = app_frames.map do |line|
@@ -134,7 +134,7 @@ module ApmBro
           # If backtrace fails, try caller as fallback
           begin
             caller_stack = caller(20, 50) # Get more frames to find app/ frames
-            app_frames = caller_stack.select { |frame| frame.include?('/app/') }
+            app_frames = caller_stack.select { |frame| frame.include?('app/') && !frame.include?('/vendor/') }
             caller_trace = app_frames.map do |line|
               line.gsub(/\/[^\/]*(password|secret|key|token)[^\/]*\//i, '/[FILTERED]/')
             end
@@ -149,7 +149,7 @@ module ApmBro
       if data[:backtrace] && data[:backtrace].is_a?(Array)
         # Filter to only include frames that contain "app/"
         app_backtrace = data[:backtrace].select do |line|
-          line.is_a?(String) && line.include?('/app/')
+          line.is_a?(String) && line.include?('app/') && !line.include?('/vendor/')
         end
         
         backtrace_trace = app_backtrace.map do |line|
