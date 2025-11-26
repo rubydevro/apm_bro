@@ -23,7 +23,7 @@ module ApmBro
       end
 
       api_key = @configuration.resolve_api_key
-      
+
       if api_key.nil?
         return
       end
@@ -50,7 +50,7 @@ module ApmBro
 
     def create_circuit_breaker
       return nil unless @configuration.circuit_breaker_enabled
-      
+
       CircuitBreaker.new(
         failure_threshold: @configuration.circuit_breaker_failure_threshold,
         recovery_timeout: @configuration.circuit_breaker_recovery_timeout,
@@ -59,8 +59,8 @@ module ApmBro
     end
 
     def make_http_request(event_name, payload, api_key)
-      endpoint_url = @configuration.respond_to?(:ruby_dev) && @configuration.ruby_dev ?
-          'http://localhost:3100/apm/v1/metrics' :
+      endpoint_url = (@configuration.respond_to?(:ruby_dev) && @configuration.ruby_dev) ?
+          "http://localhost:3100/apm/v1/metrics" :
           "https://www.deadbro.com/apm/v1/metrics"
 
       uri = URI.parse(endpoint_url)
@@ -72,43 +72,37 @@ module ApmBro
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["Authorization"] = "Bearer #{api_key}"
-      body = { event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, revision: @configuration.resolve_deploy_id }
+      body = {event: event_name, payload: payload, sent_at: Time.now.utc.iso8601, revision: @configuration.resolve_deploy_id}
       request.body = JSON.dump(body)
 
       # Fire-and-forget using a short-lived thread to avoid blocking the request cycle.
       Thread.new do
-        begin
-          response = http.request(request)
+        response = http.request(request)
 
-          if response
-            # Update circuit breaker based on response
-            if @circuit_breaker && @configuration.circuit_breaker_enabled
-              if response.is_a?(Net::HTTPSuccess)
-                @circuit_breaker.send(:on_success)
-              else
-                @circuit_breaker.send(:on_failure)
-              end
-            end
-          else
-            # Treat nil response as failure for circuit breaker
-            if @circuit_breaker && @configuration.circuit_breaker_enabled
+        if response
+          # Update circuit breaker based on response
+          if @circuit_breaker && @configuration.circuit_breaker_enabled
+            if response.is_a?(Net::HTTPSuccess)
+              @circuit_breaker.send(:on_success)
+            else
               @circuit_breaker.send(:on_failure)
             end
           end
-          
-          response
-        rescue Timeout::Error => e
-          
-          # Update circuit breaker on timeout
-          if @circuit_breaker && @configuration.circuit_breaker_enabled
-            @circuit_breaker.send(:on_failure)
-          end
-        rescue StandardError => e
-          
-          # Update circuit breaker on exception
-          if @circuit_breaker && @configuration.circuit_breaker_enabled
-            @circuit_breaker.send(:on_failure)
-          end
+        elsif @circuit_breaker && @configuration.circuit_breaker_enabled
+          # Treat nil response as failure for circuit breaker
+          @circuit_breaker.send(:on_failure)
+        end
+
+        response
+      rescue Timeout::Error
+        # Update circuit breaker on timeout
+        if @circuit_breaker && @configuration.circuit_breaker_enabled
+          @circuit_breaker.send(:on_failure)
+        end
+      rescue
+        # Update circuit breaker on exception
+        if @circuit_breaker && @configuration.circuit_breaker_enabled
+          @circuit_breaker.send(:on_failure)
         end
       end
 
@@ -124,5 +118,3 @@ module ApmBro
     end
   end
 end
-
-

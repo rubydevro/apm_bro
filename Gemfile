@@ -9,4 +9,6 @@ gem "rake", "~> 13.0"
 
 gem "rspec", "~> 3.0"
 
+gem "simplecov", "~> 0.22", require: false
+
 gem "standard", "~> 1.3"

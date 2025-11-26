@@ -2,7 +2,7 @@
 
 module ApmBro
   class Configuration
-    DEFAULT_ENDPOINT_PATH = "/v1/metrics".freeze
+    DEFAULT_ENDPOINT_PATH = "/v1/metrics"
 
     attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :sample_rate, :excluded_controllers, :excluded_jobs, :excluded_controller_actions, :deploy_id
 
@@ -157,7 +157,7 @@ module ApmBro
       sample_rate = resolve_sample_rate
       return true if sample_rate >= 100
       return false if sample_rate <= 0
-      
+
       # Generate random number 1-100 and check if it's within sample rate
       rand(1..100) <= sample_rate
     end
@@ -168,7 +168,7 @@ module ApmBro
         @sample_rate = nil
         return
       end
-      
+
       # Allow 0 to disable sampling, or 1-100 for percentage
       unless value.is_a?(Integer) && value >= 0 && value <= 100
         raise ArgumentError, "Sample rate must be an integer between 0 and 100, got: #{value.inspect}"
@@ -187,9 +187,9 @@ module ApmBro
       pat = pattern.to_s
       return !!(name.to_s == pat) unless pat.include?("*")
       # Convert simple wildcard pattern (e.g., "Admin::*") to regex
-      regex = Regexp.new("^" + Regexp.escape(pat).gsub(/\\\*/,'[^:]*') + "$")
+      regex = Regexp.new("^" + Regexp.escape(pat).gsub("\\*", "[^:]*") + "$")
       !!(name.to_s =~ regex)
-    rescue StandardError
+    rescue
       false
     end
 
@@ -197,12 +197,16 @@ module ApmBro
       # Try Rails.application.config_for(:apm_bro)
       begin
         if Rails.respond_to?(:application) && Rails.application.respond_to?(:config_for)
-          config = Rails.application.config_for(:apm_bro) rescue nil
+          config = begin
+            Rails.application.config_for(:apm_bro)
+          rescue
+            nil
+          end
           if config && config.is_a?(Hash)
             return dig_hash(config, *Array(path_keys))
           end
         end
-      rescue StandardError
+      rescue
       end
 
       # Try Rails.application.credentials
@@ -213,7 +217,7 @@ module ApmBro
           value = dig_credentials(creds, *Array(path_keys))
           return value if present?(value)
         end
-      rescue StandardError
+      rescue
       end
 
       # Try Rails.application.config.x.apm_bro.api_key
@@ -223,7 +227,7 @@ module ApmBro
           config_x = x.apm_bro
           return config_x.public_send(Array(path_keys).last) if config_x.respond_to?(Array(path_keys).last)
         end
-      rescue StandardError
+      rescue
       end
 
       nil
@@ -265,5 +269,3 @@ module ApmBro
     end
   end
 end
-
-

@@ -19,18 +19,16 @@ module ApmBro
 
     def self.subscribe!
       EVENTS.each do |event_name|
-        begin
-          ActiveSupport::Notifications.subscribe(event_name) do |name, started, finished, _unique_id, data|
-            next unless Thread.current[THREAD_LOCAL_KEY]
+        ActiveSupport::Notifications.subscribe(event_name) do |name, started, finished, _unique_id, data|
+          next unless Thread.current[THREAD_LOCAL_KEY]
 
-            duration_ms = ((finished - started) * 1000.0).round(2)
-            event = build_event(name, data, duration_ms)
-            Thread.current[THREAD_LOCAL_KEY] << event if event
-          end
-        rescue StandardError
+          duration_ms = ((finished - started) * 1000.0).round(2)
+          event = build_event(name, data, duration_ms)
+          Thread.current[THREAD_LOCAL_KEY] << event if event
         end
+      rescue
       end
-    rescue StandardError
+    rescue
       # Never raise from instrumentation install
     end
 
@@ -47,7 +45,7 @@ module ApmBro
     def self.build_event(name, data, duration_ms)
       return nil unless data.is_a?(Hash)
 
-      base = {
+      {
         event: name,
         duration_ms: duration_ms,
         key: safe_key(data[:key]),
@@ -57,27 +55,23 @@ module ApmBro
         namespace: safe_namespace(data[:namespace]),
         at: Time.now.utc.to_i
       }
-
-      base
-    rescue StandardError
+    rescue
       nil
     end
 
     def self.safe_key(key)
       return nil if key.nil?
       s = key.to_s
-      s.length > 200 ? s[0, 200] + "…" : s
-    rescue StandardError
+      (s.length > 200) ? s[0, 200] + "…" : s
+    rescue
       nil
     end
 
     def self.safe_keys_count(keys)
       if keys.respond_to?(:size)
         keys.size
-      else
-        nil
       end
-    rescue StandardError
+    rescue
       nil
     end
 
@@ -88,13 +82,13 @@ module ApmBro
       else
         store.class.name
       end
-    rescue StandardError
+    rescue
       nil
     end
 
     def self.safe_namespace(ns)
       ns.to_s[0, 100]
-    rescue StandardError
+    rescue
       nil
     end
 
@@ -104,13 +98,9 @@ module ApmBro
         true
       when "cache_read.active_support"
         !!data[:hit]
-      else
-        nil
       end
-    rescue StandardError
+    rescue
       nil
     end
   end
 end
-
-

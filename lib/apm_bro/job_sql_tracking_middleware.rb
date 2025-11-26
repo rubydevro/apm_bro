@@ -19,7 +19,7 @@ module ApmBro
           ApmBro::MemoryTrackingSubscriber.start_request_tracking
         end
       end
-    rescue StandardError
+    rescue
       # Never raise from instrumentation install
     end
   end
