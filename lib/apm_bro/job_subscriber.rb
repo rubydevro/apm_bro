@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
-require "active_support/notifications"
+begin
+  require "active_support/notifications"
+rescue LoadError
+  # ActiveSupport not available
+end
 
 module ApmBro
   class JobSubscriber

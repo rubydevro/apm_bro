@@ -4,7 +4,7 @@ module ApmBro
   class Configuration
     DEFAULT_ENDPOINT_PATH = "/v1/metrics".freeze
 
-    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :user_email_tracking_enabled, :user_email_extractor, :sample_rate, :excluded_controllers, :excluded_jobs, :excluded_controller_actions, :deploy_id
+    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :sample_rate, :excluded_controllers, :excluded_jobs, :excluded_controller_actions, :deploy_id
 
     def initialize
       @api_key = nil
@@ -19,8 +19,6 @@ module ApmBro
       @circuit_breaker_failure_threshold = 3
       @circuit_breaker_recovery_timeout = 60 # seconds
       @circuit_breaker_retry_timeout = 300 # seconds
-      @user_email_tracking_enabled = false
-      @user_email_extractor = nil
       @sample_rate = 100 # 100% sampling by default
       @excluded_controllers = []
       @excluded_jobs = []
@@ -81,6 +79,9 @@ module ApmBro
       end
 
       # Prefer explicit env var, then common platform-specific var
+      apm_bro_deploy_id = ENV["APM_BRO_DEPLOY_ID"]
+      return apm_bro_deploy_id if present?(apm_bro_deploy_id)
+
       env_val = ENV["GIT_REV"]
       return env_val if present?(env_val)
 
@@ -89,6 +90,12 @@ module ApmBro
 
       # Fall back to a process-stable ID
       ApmBro.process_deploy_id
+    end
+
+    def excluded_controller?(controller_name)
+      list = resolve_excluded_controllers
+      return false if list.nil? || list.empty?
+      list.any? { |pat| match_name_or_pattern?(controller_name, pat) }
     end
 
     def excluded_job?(job_class_name)
@@ -118,6 +125,20 @@ module ApmBro
       []
     end
 
+    def resolve_excluded_controllers
+      return @excluded_controllers if @excluded_controllers && !@excluded_controllers.empty?
+
+      if defined?(Rails)
+        list = fetch_from_rails_settings(%w[apm_bro excluded_controllers])
+        return Array(list) if list
+      end
+
+      env = ENV["APM_BRO_EXCLUDED_CONTROLLERS"]
+      return env.split(",").map(&:strip) if env && !env.strip.empty?
+
+      []
+    end
+
     def resolve_excluded_jobs
       return @excluded_jobs if @excluded_jobs && !@excluded_jobs.empty?
 
@@ -142,23 +163,17 @@ module ApmBro
     end
 
     def sample_rate=(value)
-      unless value.is_a?(Integer) && value >= 1 && value <= 100
-        raise ArgumentError, "Sample rate must be an integer between 1 and 100, got: #{value.inspect}"
+      # Allow nil to use default/resolved value
+      if value.nil?
+        @sample_rate = nil
+        return
+      end
+      
+      # Allow 0 to disable sampling, or 1-100 for percentage
+      unless value.is_a?(Integer) && value >= 0 && value <= 100
+        raise ArgumentError, "Sample rate must be an integer between 0 and 100, got: #{value.inspect}"
       end
       @sample_rate = value
-    end
-
-    def extract_user_email(request_data)
-      ap request_data[:headers].class
-      return nil unless @user_email_tracking_enabled
-
-      # If a custom extractor is provided, use it
-      if @user_email_extractor.respond_to?(:call)
-        return @user_email_extractor.call(request_data)
-      end
-
-      # Default extraction logic
-      extract_user_email_from_request(request_data)
     end
 
     private
@@ -247,41 +262,6 @@ module ApmBro
       base = base.chomp("/")
       path = "/#{path}" unless path.start_with?("/")
       base + path
-    end
-
-    def extract_user_email_from_request(request_data)
-      # Try to get user email from various common sources
-      return nil unless request_data.is_a?(Hash)
-
-      # Check for current_user.email (common in Rails apps)
-      if request_data[:current_user]&.respond_to?(:email)
-        return request_data[:current_user].email
-      end
-
-      # Check for user.email in params
-      if request_data[:params]&.is_a?(Hash)
-        user_email = request_data[:params]["user_email"] || 
-                     request_data[:params][:user_email] ||
-                     request_data[:params]["email"] || 
-                     request_data[:params][:email]
-        return user_email if user_email.present?
-      end
-
-      # Check for user email in headers
-      if request_data[:request]&.respond_to?(:headers)
-        headers = request_data[:request].headers
-        return headers["X-User-Email"] if headers["X-User-Email"].present?
-        return headers["HTTP_X_USER_EMAIL"] if headers["HTTP_X_USER_EMAIL"].present?
-      end
-
-      # Check for user email in session
-      if request_data[:session]&.is_a?(Hash)
-        return request_data[:session]["user_email"] || request_data[:session][:user_email]
-      end
-
-      nil
-    rescue StandardError
-      nil
     end
   end
 end

@@ -1,8 +1,14 @@
 # frozen_string_literal: true
 
-require "rails/railtie"
+begin
+  require "rails/railtie"
+rescue LoadError
+  # Rails not available, skip railtie definition
+end
 
-module ApmBro
+# Only define Railtie if Rails is available
+if defined?(Rails) && defined?(Rails::Railtie)
+  module ApmBro
   class Railtie < ::Rails::Railtie
     initializer "apm_bro.configure" do |_app|
       # Allow host app to set config in Rails config, credentials, or ENV.
@@ -95,5 +101,4 @@ module ApmBro
     end
   end
 end
-
-
+end
