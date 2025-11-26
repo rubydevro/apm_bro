@@ -5,8 +5,26 @@ require "active_support/notifications"
 module ApmBro
   class Subscriber
     EVENT_NAME = "process_action.action_controller".freeze
+    START_EVENT_NAME = "start_action.action_controller".freeze
+    THREAD_LOCAL_CONTROLLER_KEY = :apm_bro_controller_instance
 
     def self.subscribe!(client: Client.new)
+      # Subscribe to start_action to capture controller instance
+      # Note: The controller instance might not be directly available in start_action,
+      # so we'll try to get it from the request object in process_action
+      ActiveSupport::Notifications.subscribe(START_EVENT_NAME) do |_name, _started, _finished, _unique_id, data|
+        begin
+          # Try to get controller instance from various sources
+          if data[:controller_instance]
+            Thread.current[THREAD_LOCAL_CONTROLLER_KEY] = data[:controller_instance]
+          elsif data[:request] && data[:request].respond_to?(:controller)
+            Thread.current[THREAD_LOCAL_CONTROLLER_KEY] = data[:request].controller
+          end
+        rescue StandardError
+          # Silently fail
+        end
+      end
+
       ActiveSupport::Notifications.subscribe(EVENT_NAME) do |name, started, finished, _unique_id, data|
         # Skip excluded controllers or controller#action pairs
         begin
@@ -29,6 +47,9 @@ module ApmBro
         # Stop view rendering tracking and get collected view events
         view_events = ApmBro::ViewRenderingSubscriber.stop_request_tracking
         view_performance = ApmBro::ViewRenderingSubscriber.analyze_view_performance(view_events)
+        
+        # Extract controller instance variables and their counts
+        controller_instance_vars = extract_controller_instance_variables(data)
         
         # Stop memory tracking and get collected memory data
         if ApmBro.configuration.allocation_tracking_enabled && defined?(ApmBro::MemoryTrackingSubscriber)
@@ -96,6 +117,7 @@ module ApmBro
               message: (exception_message || exception_obj&.message).to_s[0, 1000],
               backtrace: backtrace,
               error: true,
+              controller_instance_variables: extract_controller_instance_variables(data),
               logs: ApmBro.logger.logs
             }
 
@@ -136,9 +158,13 @@ module ApmBro
           view_performance: view_performance,
           memory_events: memory_events,
           memory_performance: memory_performance,
+          controller_instance_variables: controller_instance_vars,
           logs: ApmBro.logger.logs
         }
         client.post_metric(event_name: name, payload: payload)
+      ensure
+        # Clean up controller instance after processing
+        Thread.current[THREAD_LOCAL_CONTROLLER_KEY] = nil
       end
     end
 
@@ -329,6 +355,143 @@ module ApmBro
       data[:headers].env['warden'].user.id
     rescue StandardError
       nil
+    end
+
+    def self.extract_controller_instance_variables(data)
+      controller_instance = get_controller_instance(data)
+      return {} unless controller_instance
+
+      instance_vars = {}
+      begin
+        # Get all instance variables from the controller
+        controller_instance.instance_variables.each do |var_name|
+          var_value = controller_instance.instance_variable_get(var_name)
+          
+          # Skip nil values
+          next if var_value.nil?
+          
+          # Check if it's an unloaded ActiveRecord::Relation
+          is_unloaded_relation = false
+          if defined?(ActiveRecord::Relation) && var_value.is_a?(ActiveRecord::Relation)
+            is_unloaded_relation = !var_value.loaded?
+          end
+          
+          item_count = count_items(var_value)
+          
+          # Remove @ prefix for cleaner output
+          clean_name = var_name.to_s.sub(/^@/, '')
+          
+          # Include all non-nil values, even if count is 0
+          # This helps identify unloaded relations and other interesting variables
+          instance_vars[clean_name] = {
+            count: item_count,
+            type: var_value.class.name,
+            loaded: is_unloaded_relation ? false : nil  # Only set if it's an unloaded relation
+          }
+        end
+      rescue StandardError => e
+        # Log error but don't break the request
+        ApmBro.logger.warn("Failed to extract controller instance variables: #{e.message}")
+      end
+      
+      instance_vars
+    end
+
+    def self.get_controller_instance(data)
+      # Method 1: Try to get from thread-local storage (set by start_action event)
+      controller = Thread.current[THREAD_LOCAL_CONTROLLER_KEY]
+      return controller if controller
+      
+      # Method 2: Try to get from request object's controller method
+      if data[:request]
+        begin
+          if data[:request].respond_to?(:controller)
+            controller = data[:request].controller
+            return controller if controller
+          end
+          
+          # Try accessing via instance variable if request is an ActionDispatch::Request
+          if data[:request].instance_variable_defined?(:@controller)
+            controller = data[:request].instance_variable_get(:@controller)
+            return controller if controller
+          end
+        rescue StandardError
+          # Continue to next method
+        end
+      end
+      
+      # Method 3: Try to get from env if available
+      if data[:request] && data[:request].respond_to?(:env)
+        begin
+          env = data[:request].env
+          if env && env['action_controller.instance']
+            return env['action_controller.instance']
+          end
+        rescue StandardError
+          # Continue to next method
+        end
+      end
+      
+      # Method 4: Try to get from headers if available (some Rails versions store it there)
+      if data[:headers] && data[:headers].respond_to?(:env)
+        begin
+          env = data[:headers].env
+          if env && env['action_controller.instance']
+            return env['action_controller.instance']
+          end
+        rescue StandardError
+          # Continue
+        end
+      end
+      
+      nil
+    rescue StandardError
+      nil
+    end
+
+    def self.count_items(value)
+      return 0 if value.nil?
+      
+      # Check if it's an ActiveRecord::Relation first to avoid triggering SQL queries
+      if defined?(ActiveRecord::Relation) && value.is_a?(ActiveRecord::Relation)
+        # Only count if the relation is already loaded (in memory)
+        # This avoids triggering an unintended SQL query
+        if value.loaded?
+          # Safe to use length on loaded relation (uses in-memory array)
+          value.length
+        else
+          # Relation is not loaded - return 0 to indicate we can't count without triggering SQL
+          # We'll still log it as a relation type, but with count 0
+          0
+        end
+      else
+        case value
+        when Array
+          value.length
+        when Hash
+          value.length
+        when Enumerable
+          # For other Enumerable collections (not ActiveRecord::Relation)
+          # Try to use length first (safer, doesn't force evaluation)
+          if value.respond_to?(:length)
+            value.length
+          elsif value.respond_to?(:count)
+            # Only use count if length is not available
+            # But be careful - this might still trigger queries for some lazy collections
+            value.count
+          else
+            0
+          end
+        when String
+          value.length
+        else
+          # For other objects, return 1 if not nil, 0 if nil
+          value.nil? ? 0 : 1
+        end
+      end
+    rescue StandardError
+      # If counting fails (e.g., lazy evaluation issues), return 0
+      0
     end
   end
 end

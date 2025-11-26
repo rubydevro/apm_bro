@@ -10,6 +10,9 @@ module ApmBro
       # Clear logs for this request
       ApmBro.logger.clear
 
+      # Clear controller instance from previous request
+      Thread.current[ApmBro::Subscriber::THREAD_LOCAL_CONTROLLER_KEY] = nil
+
       # Start SQL tracking for this request
       if defined?(ApmBro::SqlSubscriber)
         puts "Starting SQL tracking for request: #{env['REQUEST_METHOD']} #{env['PATH_INFO']}"
