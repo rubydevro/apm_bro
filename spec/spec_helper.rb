@@ -6,6 +6,14 @@ SimpleCov.start do
   add_filter "/.bundle/"
 end
 
+# Load ActiveSupport::Notifications for testing
+begin
+  require "active_support"
+  require "active_support/notifications"
+rescue LoadError
+  # ActiveSupport not available
+end
+
 require "apm_bro"
 require "net/http"
 
