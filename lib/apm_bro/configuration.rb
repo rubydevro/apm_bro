@@ -4,7 +4,7 @@ module ApmBro
   class Configuration
     DEFAULT_ENDPOINT_PATH = "/v1/metrics"
 
-    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :sample_rate, :excluded_controllers, :excluded_jobs, :excluded_controller_actions, :deploy_id
+    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :sample_rate, :excluded_controllers, :excluded_jobs, :excluded_controller_actions, :deploy_id, :slow_query_threshold_ms, :explain_analyze_enabled
 
     def initialize
       @api_key = nil
@@ -24,6 +24,8 @@ module ApmBro
       @excluded_jobs = []
       @excluded_controller_actions = []
       @deploy_id = resolve_deploy_id
+      @slow_query_threshold_ms = 500 # Default: 500ms
+      @explain_analyze_enabled = false # Enable EXPLAIN ANALYZE for slow queries by default
     end
 
     def resolve_api_key
@@ -112,15 +114,45 @@ module ApmBro
     end
 
     def resolve_excluded_controller_actions
-      return @excluded_controller_actions if @excluded_controller_actions && !@excluded_controller_actions.empty?
+      # Collect patterns from @excluded_controller_actions
+      patterns = []
+      if @excluded_controller_actions && !@excluded_controller_actions.empty?
+        patterns.concat(Array(@excluded_controller_actions))
+      end
+
+      # Also check @excluded_controllers for patterns containing '#' (controller action patterns)
+      if @excluded_controllers && !@excluded_controllers.empty?
+        action_patterns = Array(@excluded_controllers).select { |pat| pat.to_s.include?("#") }
+        patterns.concat(action_patterns)
+      end
+
+      return patterns if !patterns.empty?
 
       if defined?(Rails)
         list = fetch_from_rails_settings(%w[apm_bro excluded_controller_actions])
-        return Array(list) if list
+        if list
+          rails_patterns = Array(list)
+          # Also check excluded_controllers from Rails settings for action patterns
+          controllers_list = fetch_from_rails_settings(%w[apm_bro excluded_controllers])
+          if controllers_list
+            action_patterns = Array(controllers_list).select { |pat| pat.to_s.include?("#") }
+            rails_patterns.concat(action_patterns)
+          end
+          return rails_patterns if !rails_patterns.empty?
+        end
       end
 
       env = ENV["APM_BRO_EXCLUDED_CONTROLLER_ACTIONS"]
-      return env.split(",").map(&:strip) if env && !env.strip.empty?
+      if env && !env.strip.empty?
+        env_patterns = env.split(",").map(&:strip)
+        # Also check excluded_controllers env var for action patterns
+        controllers_env = ENV["APM_BRO_EXCLUDED_CONTROLLERS"]
+        if controllers_env && !controllers_env.strip.empty?
+          action_patterns = controllers_env.split(",").map(&:strip).select { |pat| pat.include?("#") }
+          env_patterns.concat(action_patterns)
+        end
+        return env_patterns if !env_patterns.empty?
+      end
 
       []
     end
@@ -186,8 +218,16 @@ module ApmBro
       return false if name.nil? || pattern.nil?
       pat = pattern.to_s
       return !!(name.to_s == pat) unless pat.include?("*")
-      # Convert simple wildcard pattern (e.g., "Admin::*") to regex
-      regex = Regexp.new("^" + Regexp.escape(pat).gsub("\\*", "[^:]*") + "$")
+      
+      # For controller action patterns (containing '#'), use .* to match any characters including colons
+      # For controller-only patterns, use [^:]* to match namespace segments
+      if pat.include?("#")
+        # Controller action pattern: allow * to match any characters including colons
+        regex = Regexp.new("^" + Regexp.escape(pat).gsub("\\*", ".*") + "$")
+      else
+        # Controller-only pattern: use [^:]* to match namespace segments
+        regex = Regexp.new("^" + Regexp.escape(pat).gsub("\\*", "[^:]*") + "$")
+      end
       !!(name.to_s =~ regex)
     rescue
       false

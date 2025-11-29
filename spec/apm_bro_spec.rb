@@ -259,6 +259,15 @@ RSpec.describe ApmBro do
       expect(config.excluded_controller_action?("Admin::ReportsController", "index")).to be true
     end
 
+    it "excludes controller#action patterns from excluded_controllers" do
+      config = ApmBro::Configuration.new
+      config.excluded_controllers = ["ActiveStorage*#*"]
+
+      expect(config.excluded_controller_action?("ActiveStorage::BlobsController", "show")).to be true
+      expect(config.excluded_controller_action?("ActiveStorage::BlobsController", "index")).to be true
+      expect(config.excluded_controller_action?("UsersController", "show")).to be false
+    end
+
     it "excludes specified jobs" do
       config = ApmBro::Configuration.new
       config.excluded_jobs = ["ActiveStorage::AnalyzeJob", "Admin::*"]
@@ -519,6 +528,13 @@ RSpec.describe ApmBro do
       expect(id).to be_a(String)
       expect(id.length).to eq(36) # UUID format
       expect(ApmBro.process_deploy_id).to eq(id) # Should be memoized
+    end
+
+    it "returns environment via env method" do
+      env = ApmBro.env
+      expect(env).to be_a(String)
+      # Should return development, test, or production, or fallback to ENV
+      expect(["development", "test", "production", ENV["RACK_ENV"], ENV["RAILS_ENV"]].compact).to include(env)
     end
   end
 end

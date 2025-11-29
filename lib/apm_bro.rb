@@ -51,4 +51,13 @@ module ApmBro
   def self.logger
     @logger ||= Logger.new
   end
+
+  # Returns the current environment (Rails.env or ENV fallback)
+  def self.env
+    if defined?(Rails) && Rails.respond_to?(:env)
+      Rails.env
+    else
+      ENV["RACK_ENV"] || ENV["RAILS_ENV"] || "development"
+    end
+  end
 end

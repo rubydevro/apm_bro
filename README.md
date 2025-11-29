@@ -108,6 +108,54 @@ ApmBro automatically tracks SQL queries executed during each request and job. Ea
 - `cached` - Whether the query was cached
 - `connection_id` - Database connection ID
 - `trace` - Call stack showing where the query was executed
+- `explain_plan` - Query execution plan (when EXPLAIN ANALYZE is enabled, see below)
+
+## Automatic EXPLAIN ANALYZE for Slow Queries
+
+ApmBro can automatically run `EXPLAIN ANALYZE` on slow SQL queries to help you understand query performance and identify optimization opportunities. This feature runs in the background and doesn't block your application requests.
+
+### How It Works
+
+- **Automatic Detection**: When a query exceeds the configured threshold, ApmBro automatically captures its execution plan
+- **Background Execution**: EXPLAIN ANALYZE runs in a separate thread using a dedicated database connection, so it never blocks your application
+- **Database Support**: Works with PostgreSQL, MySQL, SQLite, and other databases
+- **Smart Filtering**: Automatically skips transaction queries (BEGIN, COMMIT, ROLLBACK) and other queries that don't benefit from EXPLAIN
+
+### Configuration
+
+- **`explain_analyze_enabled`** (default: `false`) - Set to `true` to enable automatic EXPLAIN ANALYZE
+- **`slow_query_threshold_ms`** (default: `500`) - Queries taking longer than this threshold will have their execution plan captured
+
+### Example Configuration
+
+```ruby
+ApmBro.configure do |config|
+  config.api_key = ENV['APM_BRO_API_KEY']
+  config.enabled = true
+  
+  # Enable EXPLAIN ANALYZE for queries slower than 500ms
+  config.explain_analyze_enabled = true
+  config.slow_query_threshold_ms = 500
+  
+  # Or use a higher threshold for production
+  # config.slow_query_threshold_ms = 1000  # Only explain queries > 1 second
+end
+```
+
+### What You Get
+
+When a slow query is detected, the `explain_plan` field in the SQL query data will contain:
+- **PostgreSQL**: Full EXPLAIN ANALYZE output with buffer usage statistics
+- **MySQL**: EXPLAIN ANALYZE output showing actual execution times
+- **SQLite**: EXPLAIN QUERY PLAN output
+- **Other databases**: Standard EXPLAIN output
+
+This execution plan helps you:
+- Identify missing indexes
+- Understand query execution order
+- Spot full table scans
+- Optimize JOIN operations
+- Analyze buffer and cache usage (PostgreSQL)
 
 ## View Rendering Tracking
 

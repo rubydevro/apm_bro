@@ -148,5 +148,36 @@ RSpec.describe ApmBro::SqlSubscriber do
     expect(queries).to be_a(Array)
     expect(Thread.current[:apm_bro_sql_queries]).to be_nil
   end
+
+  it "has configuration for slow query threshold and explain analyze" do
+    config = ApmBro::Configuration.new
+    expect(config.slow_query_threshold_ms).to eq(500)
+    expect(config.explain_analyze_enabled).to be false
+    
+    # Test configuration
+    config.slow_query_threshold_ms = 1000
+    config.explain_analyze_enabled = true
+    expect(config.slow_query_threshold_ms).to eq(1000)
+    expect(config.explain_analyze_enabled).to be true
+  end
+
+  it "determines if query should be explained" do
+    ApmBro.configuration.explain_analyze_enabled = true
+    # Fast query should not be explained
+    expect(sql_subscriber.should_explain_query?(100, "SELECT * FROM users")).to be false
+    
+    # Slow query should be explained
+    expect(sql_subscriber.should_explain_query?(600, "SELECT * FROM users")).to be true
+    
+    # EXPLAIN queries should not be explained
+    expect(sql_subscriber.should_explain_query?(600, "EXPLAIN SELECT * FROM users")).to be false
+    
+    # Empty queries should not be explained
+    expect(sql_subscriber.should_explain_query?(600, "")).to be false
+    
+    # Transaction queries should not be explained
+    expect(sql_subscriber.should_explain_query?(600, "BEGIN")).to be false
+    expect(sql_subscriber.should_explain_query?(600, "COMMIT")).to be false
+  end
 end
 
