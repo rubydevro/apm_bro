@@ -6,7 +6,7 @@ module ApmBro
 
     def self.subscribe!
       install_redis_instrumentation!
-    rescue StandardError
+    rescue
       # Never raise from instrumentation install
     end
 
@@ -25,7 +25,7 @@ module ApmBro
       # Only instrument if Redis::Client actually has the call method
       # Check both public and private methods
       has_call = ::Redis::Client.instance_methods(false).include?(:call) ||
-                 ::Redis::Client.private_instance_methods(false).include?(:call)
+        ::Redis::Client.private_instance_methods(false).include?(:call)
       return unless has_call
 
       mod = Module.new do
@@ -41,7 +41,7 @@ module ApmBro
             end
           else
             # If not tracking, just pass through unchanged
-            super(*args, &block)
+            super
           end
         end
 
@@ -63,7 +63,6 @@ module ApmBro
           return yield unless Thread.current[RedisSubscriber::THREAD_LOCAL_KEY]
 
           start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          result = nil
           error = nil
           begin
             result = yield
@@ -90,7 +89,7 @@ module ApmBro
               if Thread.current[RedisSubscriber::THREAD_LOCAL_KEY]
                 Thread.current[RedisSubscriber::THREAD_LOCAL_KEY] << event
               end
-            rescue StandardError
+            rescue
             end
           end
         end
@@ -99,7 +98,6 @@ module ApmBro
           return yield unless Thread.current[RedisSubscriber::THREAD_LOCAL_KEY]
 
           start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          result = nil
           begin
             result = yield
             result
@@ -119,7 +117,7 @@ module ApmBro
               if Thread.current[RedisSubscriber::THREAD_LOCAL_KEY]
                 Thread.current[RedisSubscriber::THREAD_LOCAL_KEY] << event
               end
-            rescue StandardError
+            rescue
             end
           end
         end
@@ -128,7 +126,6 @@ module ApmBro
           return yield unless Thread.current[RedisSubscriber::THREAD_LOCAL_KEY]
 
           start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          result = nil
           begin
             result = yield
             result
@@ -148,7 +145,7 @@ module ApmBro
               if Thread.current[RedisSubscriber::THREAD_LOCAL_KEY]
                 Thread.current[RedisSubscriber::THREAD_LOCAL_KEY] << event
               end
-            rescue StandardError
+            rescue
             end
           end
         end
@@ -157,39 +154,41 @@ module ApmBro
           parts = Array(command).map(&:to_s)
           command_name = parts.first&.upcase
           key = parts[1]
-          args_count = parts.length > 1 ? parts.length - 1 : 0
+          args_count = (parts.length > 1) ? parts.length - 1 : 0
 
           {
             command: safe_command(command_name),
             key: safe_key(key),
             args_count: args_count
           }
-        rescue StandardError
-          { command: nil, key: nil, args_count: nil }
+        rescue
+          {command: nil, key: nil, args_count: nil}
         end
 
         def safe_command(cmd)
           return nil if cmd.nil?
           cmd.to_s[0, 20]
-        rescue StandardError
+        rescue
           nil
         end
 
         def safe_key(key)
           return nil if key.nil?
           s = key.to_s
-          s.length > 200 ? s[0, 200] + "…" : s
-        rescue StandardError
+          (s.length > 200) ? s[0, 200] + "…" : s
+        rescue
           nil
         end
 
         def safe_db(db)
-          Integer(db) rescue nil
+          Integer(db)
+        rescue
+          nil
         end
       end
 
       ::Redis::Client.prepend(mod) unless ::Redis::Client.ancestors.include?(mod)
-    rescue StandardError
+    rescue
       # Redis::Client may not be available or may have different structure
     end
 
@@ -204,7 +203,7 @@ module ApmBro
             event = build_event(name, data, duration_ms)
             Thread.current[THREAD_LOCAL_KEY] << event if event
           end
-        rescue StandardError
+        rescue
         end
       end
     end
@@ -221,7 +220,7 @@ module ApmBro
 
     def self.build_event(name, data, duration_ms)
       cmd = extract_command(data)
-      base = {
+      {
         event: name.to_s,
         command: cmd[:command],
         key: cmd[:key],
@@ -229,22 +228,21 @@ module ApmBro
         duration_ms: duration_ms,
         db: safe_db(data[:db])
       }
-      base
-    rescue StandardError
+    rescue
       nil
     end
 
     def self.extract_command(data)
-      return { command: nil, key: nil, args_count: nil } unless data.is_a?(Hash)
+      return {command: nil, key: nil, args_count: nil} unless data.is_a?(Hash)
 
-      if data[:command]
-        parts = Array(data[:command]).map(&:to_s)
+      parts = if data[:command]
+        Array(data[:command]).map(&:to_s)
       elsif data[:commands]
-        parts = Array(data[:commands]).flatten.map(&:to_s)
+        Array(data[:commands]).flatten.map(&:to_s)
       elsif data[:cmd]
-        parts = Array(data[:cmd]).map(&:to_s)
+        Array(data[:cmd]).map(&:to_s)
       else
-        parts = []
+        []
       end
 
       command_name = parts.first&.upcase
@@ -256,30 +254,29 @@ module ApmBro
         key: safe_key(key),
         args_count: args_count
       }
-    rescue StandardError
-      { command: nil, key: nil, args_count: nil }
+    rescue
+      {command: nil, key: nil, args_count: nil}
     end
 
     def self.safe_command(cmd)
       return nil if cmd.nil?
-      s = cmd.to_s[0, 20]
-      s
-    rescue StandardError
+      cmd.to_s[0, 20]
+    rescue
       nil
     end
 
     def self.safe_key(key)
       return nil if key.nil?
       s = key.to_s
-      s.length > 200 ? s[0, 200] + "…" : s
-    rescue StandardError
+      (s.length > 200) ? s[0, 200] + "…" : s
+    rescue
       nil
     end
 
     def self.safe_db(db)
-      Integer(db) rescue nil
+      Integer(db)
+    rescue
+      nil
     end
   end
 end
-
-

@@ -11,12 +11,12 @@ module ApmBro
     }.freeze
 
     # ANSI color codes
-    COLOR_RESET = "\033[0m".freeze
-    COLOR_DEBUG = "\033[36m".freeze  # Cyan
-    COLOR_INFO = "\033[32m".freeze   # Green
-    COLOR_WARN = "\033[33m".freeze   # Yellow
-    COLOR_ERROR = "\033[31m".freeze # Red
-    COLOR_FATAL = "\033[35m".freeze  # Magenta
+    COLOR_RESET = "\033[0m"
+    COLOR_DEBUG = "\033[36m"  # Cyan
+    COLOR_INFO = "\033[32m"   # Green
+    COLOR_WARN = "\033[33m"   # Yellow
+    COLOR_ERROR = "\033[31m" # Red
+    COLOR_FATAL = "\033[35m"  # Magenta
 
     def initialize
       @thread_logs_key = :apm_bro_logs
@@ -72,7 +72,7 @@ module ApmBro
 
     def print_log(severity, message, timestamp)
       formatted_message = format_log_message(severity, message, timestamp)
-      
+
       if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
         # Use Rails logger if available (Rails handles its own color formatting)
         case severity
@@ -92,7 +92,7 @@ module ApmBro
         colored_message = format_log_message_with_color(severity, message, timestamp)
         $stdout.puts(colored_message)
       end
-    rescue StandardError
+    rescue
       # Never let logging break the application
       $stdout.puts("[ApmBro] #{severity.to_s.upcase}: #{message}")
     end
@@ -125,4 +125,3 @@ module ApmBro
     end
   end
 end
-

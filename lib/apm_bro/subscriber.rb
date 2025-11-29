@@ -4,7 +4,7 @@ require "active_support/notifications"
 
 module ApmBro
   class Subscriber
-    EVENT_NAME = "process_action.action_controller".freeze
+    EVENT_NAME = "process_action.action_controller"
 
     def self.subscribe!(client: Client.new)
       ActiveSupport::Notifications.subscribe(EVENT_NAME) do |name, started, finished, _unique_id, data|
@@ -15,13 +15,13 @@ module ApmBro
           if ApmBro.configuration.excluded_controller_action?(controller_name, action_name)
             next
           end
-        rescue StandardError
+        rescue
         end
 
         duration_ms = ((finished - started) * 1000.0).round(2)
         # Stop SQL tracking and get collected queries (this was started by the request)
         sql_queries = ApmBro::SqlSubscriber.stop_request_tracking
-        
+
         # Stop cache and redis tracking
         cache_events = defined?(ApmBro::CacheSubscriber) ? ApmBro::CacheSubscriber.stop_request_tracking : []
         redis_events = defined?(ApmBro::RedisSubscriber) ? ApmBro::RedisSubscriber.stop_request_tracking : []
@@ -29,7 +29,7 @@ module ApmBro
         # Stop view rendering tracking and get collected view events
         view_events = ApmBro::ViewRenderingSubscriber.stop_request_tracking
         view_performance = ApmBro::ViewRenderingSubscriber.analyze_view_performance(view_events)
-        
+
         # Stop memory tracking and get collected memory data
         if ApmBro.configuration.allocation_tracking_enabled && defined?(ApmBro::MemoryTrackingSubscriber)
           detailed_memory = ApmBro::MemoryTrackingSubscriber.stop_request_tracking
@@ -57,7 +57,7 @@ module ApmBro
             duration_seconds: lightweight_memory[:duration_seconds]
           }
         end
-        
+
         # Record memory sample for leak detection (only if memory tracking enabled)
         if ApmBro.configuration.memory_tracking_enabled
           ApmBro::MemoryLeakDetector.record_memory_sample({
@@ -70,7 +70,7 @@ module ApmBro
             action: data[:action]
           })
         end
-        
+
         # Report exceptions attached to this action (e.g. controller/view errors)
         if data[:exception] || data[:exception_object]
           begin
@@ -90,9 +90,8 @@ module ApmBro
               host: safe_host,
               params: safe_params(data),
               user_agent: safe_user_agent(data),
-              user_email: extract_user_email(data),
               user_id: extract_user_id(data),
-              exception_class: (exception_class || exception_obj&.class&.name),
+              exception_class: exception_class || exception_obj&.class&.name,
               message: (exception_message || exception_obj&.message).to_s[0, 1000],
               backtrace: backtrace,
               error: true,
@@ -101,7 +100,7 @@ module ApmBro
 
             event_name = (exception_class || exception_obj&.class&.name || "exception").to_s
             client.post_metric(event_name: event_name, payload: error_payload)
-          rescue StandardError
+          rescue
           ensure
             next
           end
@@ -121,13 +120,12 @@ module ApmBro
           rails_env: rails_env,
           params: safe_params(data),
           user_agent: safe_user_agent(data),
-          user_email: extract_user_email(data),
           user_id: extract_user_id(data),
           memory_usage: memory_usage_mb,
           gc_stats: gc_stats,
           sql_count: sql_count(data),
           sql_queries: sql_queries,
-          http_outgoing: (Thread.current[:apm_bro_http_events] || []),
+          http_outgoing: Thread.current[:apm_bro_http_events] || [],
           cache_events: cache_events,
           redis_events: redis_events,
           cache_hits: cache_hits(data),
@@ -145,13 +143,17 @@ module ApmBro
     def self.safe_path(data)
       path = data[:path] || (data[:request] && data[:request].path)
       path.to_s
-    rescue StandardError
+    rescue
       ""
     end
 
     def self.safe_host
       if defined?(Rails) && Rails.respond_to?(:application)
-        Rails.application.class.module_parent_name rescue ""
+        begin
+          Rails.application.class.module_parent_name
+        rescue
+          ""
+        end
       else
         ""
       end
@@ -171,7 +173,7 @@ module ApmBro
       params = data[:params]
       begin
         params = params.to_unsafe_h if params.respond_to?(:to_unsafe_h)
-      rescue StandardError
+      rescue
       end
 
       unless params.is_a?(Hash)
@@ -190,7 +192,7 @@ module ApmBro
 
       # Truncate deeply to keep payload small and safe
       truncate_value(filtered)
-    rescue StandardError
+    rescue
       {}
     end
 
@@ -198,7 +200,7 @@ module ApmBro
     def self.truncate_value(value, max_str: 200, max_array: 20, max_hash_keys: 30)
       case value
       when String
-        value.length > max_str ? value[0, max_str] + "…" : value
+        (value.length > max_str) ? value[0, max_str] + "…" : value
       when Numeric, TrueClass, FalseClass, NilClass
         value
       when Array
@@ -209,7 +211,7 @@ module ApmBro
           memo[k] = truncate_value(v, max_str: max_str, max_array: max_array, max_hash_keys: max_hash_keys)
         end
       else
-        value.to_s.length > max_str ? value.to_s[0, max_str] + "…" : value.to_s
+        (value.to_s.length > max_str) ? value.to_s[0, max_str] + "…" : value.to_s
       end
     end
 
@@ -233,7 +235,11 @@ module ApmBro
             ua = headers["HTTP_USER_AGENT"] || headers["User-Agent"] || headers["user-agent"]
             return ua.to_s[0..200]
           elsif headers.respond_to?(:to_h)
-            h = headers.to_h rescue {}
+            h = begin
+              headers.to_h
+            rescue
+              {}
+            end
             ua = h["HTTP_USER_AGENT"] || h["User-Agent"] || h["user-agent"]
             return ua.to_s[0..200]
           end
@@ -246,22 +252,26 @@ module ApmBro
         end
 
         ""
-      rescue StandardError
+      rescue
         ""
       end
-    rescue StandardError
+    rescue
       ""
     end
 
     def self.memory_usage_mb
       if defined?(GC) && GC.respond_to?(:stat)
         # Get memory usage in MB
-        memory_kb = `ps -o rss= -p #{Process.pid}`.to_i rescue 0
+        memory_kb = begin
+          `ps -o rss= -p #{Process.pid}`.to_i
+        rescue
+          0
+        end
         (memory_kb / 1024.0).round(2)
       else
         0
       end
-    rescue StandardError
+    rescue
       0
     end
 
@@ -277,7 +287,7 @@ module ApmBro
       else
         {}
       end
-    rescue StandardError
+    rescue
       {}
     end
 
@@ -287,11 +297,15 @@ module ApmBro
         data[:sql_count]
       elsif defined?(ActiveRecord) && ActiveRecord::Base.connection
         # Try to get from ActiveRecord connection
-        ActiveRecord::Base.connection.query_cache.size rescue 0
+        begin
+          ActiveRecord::Base.connection.query_cache.size
+        rescue
+          0
+        end
       else
         0
       end
-    rescue StandardError
+    rescue
       0
     end
 
@@ -299,11 +313,15 @@ module ApmBro
       if data[:cache_hits]
         data[:cache_hits]
       elsif defined?(Rails) && Rails.cache.respond_to?(:stats)
-        Rails.cache.stats[:hits] rescue 0
+        begin
+          Rails.cache.stats[:hits]
+        rescue
+          0
+        end
       else
         0
       end
-    rescue StandardError
+    rescue
       0
     end
 
@@ -311,26 +329,22 @@ module ApmBro
       if data[:cache_misses]
         data[:cache_misses]
       elsif defined?(Rails) && Rails.cache.respond_to?(:stats)
-        Rails.cache.stats[:misses] rescue 0
+        begin
+          Rails.cache.stats[:misses]
+        rescue
+          0
+        end
       else
         0
       end
-    rescue StandardError
+    rescue
       0
     end
 
-    def self.extract_user_email(data)
-      data[:headers].env['warden'].user.email
-    rescue StandardError
-      nil
-    end
-
     def self.extract_user_id(data)
-      data[:headers].env['warden'].user.id
-    rescue StandardError
+      data[:headers].env["warden"].user.id
+    rescue
       nil
     end
   end
 end
-
-

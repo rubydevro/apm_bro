@@ -1,11 +1,15 @@
 # frozen_string_literal: true
 
-require "active_support/notifications"
+begin
+  require "active_support/notifications"
+rescue LoadError
+  # ActiveSupport not available
+end
 
 module ApmBro
   class JobSubscriber
-    JOB_EVENT_NAME = "perform.active_job".freeze
-    JOB_EXCEPTION_EVENT_NAME = "exception.active_job".freeze
+    JOB_EVENT_NAME = "perform.active_job"
+    JOB_EXCEPTION_EVENT_NAME = "exception.active_job"
 
     def self.subscribe!(client: Client.new)
       # Track job execution
@@ -15,14 +19,14 @@ module ApmBro
           if ApmBro.configuration.excluded_job?(job_class_name)
             next
           end
-        rescue StandardError
+        rescue
         end
 
         duration_ms = ((finished - started) * 1000.0).round(2)
-        
+
         # Get SQL queries executed during this job
         sql_queries = ApmBro::SqlSubscriber.stop_request_tracking
-        
+
         # Stop memory tracking and get collected memory data
         if ApmBro.configuration.allocation_tracking_enabled && defined?(ApmBro::MemoryTrackingSubscriber)
           detailed_memory = ApmBro::MemoryTrackingSubscriber.stop_request_tracking
@@ -50,7 +54,7 @@ module ApmBro
             duration_seconds: lightweight_memory[:duration_seconds]
           }
         end
-        
+
         payload = {
           job_class: data[:job].class.name,
           job_id: data[:job].job_id,
@@ -67,7 +71,7 @@ module ApmBro
           memory_performance: memory_performance,
           logs: ApmBro.logger.logs
         }
-        
+
         client.post_metric(event_name: name, payload: payload)
       end
 
@@ -78,15 +82,15 @@ module ApmBro
           if ApmBro.configuration.excluded_job?(job_class_name)
             next
           end
-        rescue StandardError
+        rescue
         end
 
         duration_ms = ((finished - started) * 1000.0).round(2)
         exception = data[:exception_object]
-        
+
         # Get SQL queries executed during this job
         sql_queries = ApmBro::SqlSubscriber.stop_request_tracking
-        
+
         # Stop memory tracking and get collected memory data
         if ApmBro.configuration.allocation_tracking_enabled && defined?(ApmBro::MemoryTrackingSubscriber)
           detailed_memory = ApmBro::MemoryTrackingSubscriber.stop_request_tracking
@@ -114,7 +118,7 @@ module ApmBro
             duration_seconds: lightweight_memory[:duration_seconds]
           }
         end
-        
+
         payload = {
           job_class: data[:job].class.name,
           job_id: data[:job].job_id,
@@ -134,11 +138,11 @@ module ApmBro
           memory_performance: memory_performance,
           logs: ApmBro.logger.logs
         }
-        
+
         event_name = exception&.class&.name || "ActiveJob::Exception"
         client.post_metric(event_name: event_name, payload: payload, error: true)
       end
-    rescue StandardError
+    rescue
       # Never raise from instrumentation install
     end
 
@@ -146,27 +150,31 @@ module ApmBro
 
     def self.safe_arguments(arguments)
       return [] unless arguments.is_a?(Array)
-      
+
       # Limit and sanitize job arguments
       arguments.first(10).map do |arg|
         case arg
         when String
-          arg.length > 200 ? arg[0, 200] + "..." : arg
+          (arg.length > 200) ? arg[0, 200] + "..." : arg
         when Hash
           # Filter sensitive keys and limit size
           filtered = arg.except(*%w[password token secret key])
-          filtered.keys.size > 20 ? filtered.first(20).to_h : filtered
+          (filtered.keys.size > 20) ? filtered.first(20).to_h : filtered
         when Array
           arg.first(5)
         when ActiveRecord::Base
           # Handle ActiveRecord objects safely
-          "#{arg.class.name}##{arg.id rescue 'unknown'}"
+          "#{arg.class.name}##{begin
+            arg.id
+          rescue
+            "unknown"
+          end}"
         else
           # Convert to string and truncate, but avoid object inspection
-          arg.to_s.length > 200 ? arg.to_s[0, 200] + "..." : arg.to_s
+          (arg.to_s.length > 200) ? arg.to_s[0, 200] + "..." : arg.to_s
         end
       end
-    rescue StandardError
+    rescue
       []
     end
 
@@ -176,13 +184,17 @@ module ApmBro
       else
         ENV["RACK_ENV"] || ENV["RAILS_ENV"] || "development"
       end
-    rescue StandardError
+    rescue
       "development"
     end
 
     def self.safe_host
       if defined?(Rails) && Rails.respond_to?(:application)
-        Rails.application.class.module_parent_name rescue ""
+        begin
+          Rails.application.class.module_parent_name
+        rescue
+          ""
+        end
       else
         ""
       end
@@ -191,12 +203,16 @@ module ApmBro
     def self.memory_usage_mb
       if defined?(GC) && GC.respond_to?(:stat)
         # Get memory usage in MB
-        memory_kb = `ps -o rss= -p #{Process.pid}`.to_i rescue 0
+        memory_kb = begin
+          `ps -o rss= -p #{Process.pid}`.to_i
+        rescue
+          0
+        end
         (memory_kb / 1024.0).round(2)
       else
         0
       end
-    rescue StandardError
+    rescue
       0
     end
 
@@ -212,7 +228,7 @@ module ApmBro
       else
         {}
       end
-    rescue StandardError
+    rescue
       {}
     end
   end

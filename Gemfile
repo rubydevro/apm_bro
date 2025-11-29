@@ -9,4 +9,9 @@ gem "rake", "~> 13.0"
 
 gem "rspec", "~> 3.0"
 
+gem "simplecov", "~> 0.22", require: false
+
 gem "standard", "~> 1.3"
+
+# For testing ActiveSupport::Notifications functionality
+gem "activesupport", "~> 7.0", require: false

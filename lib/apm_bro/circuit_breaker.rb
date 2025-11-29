@@ -20,7 +20,7 @@ module ApmBro
       @failure_threshold = failure_threshold
       @recovery_timeout = recovery_timeout
       @retry_timeout = retry_timeout
-      
+
       @state = CLOSED
       @failure_count = 0
       @last_failure_time = nil
@@ -43,21 +43,13 @@ module ApmBro
       end
     end
 
-    def state
-      @state
-    end
+    attr_reader :state
 
-    def failure_count
-      @failure_count
-    end
+    attr_reader :failure_count
 
-    def last_failure_time
-      @last_failure_time
-    end
+    attr_reader :last_failure_time
 
-    def last_success_time
-      @last_success_time
-    end
+    attr_reader :last_success_time
 
     def reset!
       @state = CLOSED
@@ -76,7 +68,7 @@ module ApmBro
 
     def should_attempt_reset?
       return false unless @last_failure_time
-      
+
       # Try to reset after recovery timeout
       elapsed = Time.now - @last_failure_time
       elapsed >= @recovery_timeout
@@ -86,7 +78,7 @@ module ApmBro
 
     def execute_with_monitoring(&block)
       result = block.call
-      
+
       if success?(result)
         on_success
         result
@@ -94,7 +86,7 @@ module ApmBro
         on_failure
         result
       end
-    rescue StandardError => e
+    rescue => e
       on_failure
       raise e
     end
@@ -113,7 +105,7 @@ module ApmBro
     def on_failure
       @failure_count += 1
       @last_failure_time = Time.now
-      
+
       # If we're in half-open state and get a failure, go back to open
       if @state == HALF_OPEN
         @state = OPEN

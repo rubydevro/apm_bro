@@ -28,41 +28,6 @@ ApmBro.configure do |cfg|
 end
 ```
 
-## User Email Tracking
-
-ApmBro can track the email of the user making requests, which is useful for debugging user-specific issues and understanding user behavior patterns.
-
-### Configuration
-
-Enable user email tracking in your Rails configuration:
-
-```ruby
-# In config/application.rb or environments/*.rb
-ApmBro.configure do |config|
-  config.user_email_tracking_enabled = true
-end
-```
-
-### Default Email Extraction
-
-By default, ApmBro will try to extract user email from these sources (in order of priority):
-
-1. **`current_user.email`** - Most common in Rails apps with authentication
-2. **Request parameters** - `user_email` or `email` in params
-3. **HTTP headers** - `X-User-Email` or `HTTP_X_USER_EMAIL`
-4. **Session data** - `user_email` in session
-
-### Custom Email Extractor
-
-In progress
-
-### Security Considerations
-
-- User email tracking is **disabled by default** for privacy
-- Only enable when necessary for debugging or analytics
-- Consider your data privacy requirements and regulations
-- The email is included in all request payloads sent to our APM endpoint
-
 ## Request Sampling
 
 ApmBro supports configurable request sampling to reduce the volume of metrics sent to your APM endpoint, which is useful for high-traffic applications.
