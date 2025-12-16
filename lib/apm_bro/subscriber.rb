@@ -9,10 +9,15 @@ module ApmBro
     def self.subscribe!(client: Client.new)
       ActiveSupport::Notifications.subscribe(EVENT_NAME) do |name, started, finished, _unique_id, data|
         # Skip excluded controllers or controller#action pairs
+        # Also check exclusive_controller_actions - if defined, only track those
         begin
           controller_name = data[:controller].to_s
           action_name = data[:action].to_s
           if ApmBro.configuration.excluded_controller_action?(controller_name, action_name)
+            next
+          end
+          # If exclusive_controller_actions is defined and not empty, only track matching actions
+          unless ApmBro.configuration.exclusive_controller_action?(controller_name, action_name)
             next
           end
         rescue

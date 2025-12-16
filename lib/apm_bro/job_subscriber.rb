@@ -19,6 +19,10 @@ module ApmBro
           if ApmBro.configuration.excluded_job?(job_class_name)
             next
           end
+          # If exclusive_jobs is defined and not empty, only track matching jobs
+          unless ApmBro.configuration.exclusive_job?(job_class_name)
+            next
+          end
         rescue
         end
 
@@ -80,6 +84,10 @@ module ApmBro
         begin
           job_class_name = data[:job].class.name
           if ApmBro.configuration.excluded_job?(job_class_name)
+            next
+          end
+          # If exclusive_jobs is defined and not empty, only track matching jobs
+          unless ApmBro.configuration.exclusive_job?(job_class_name)
             next
           end
         rescue

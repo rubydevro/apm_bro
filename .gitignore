@@ -11,3 +11,4 @@
 .rspec_status
 apm_bro-*
 .DS_Store
+FEATURES.md

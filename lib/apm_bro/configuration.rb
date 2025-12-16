@@ -4,7 +4,7 @@ module ApmBro
   class Configuration
     DEFAULT_ENDPOINT_PATH = "/v1/metrics"
 
-    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :sample_rate, :excluded_controllers, :excluded_jobs, :excluded_controller_actions, :deploy_id, :slow_query_threshold_ms, :explain_analyze_enabled
+    attr_accessor :api_key, :endpoint_url, :open_timeout, :read_timeout, :enabled, :ruby_dev, :memory_tracking_enabled, :allocation_tracking_enabled, :circuit_breaker_enabled, :circuit_breaker_failure_threshold, :circuit_breaker_recovery_timeout, :circuit_breaker_retry_timeout, :sample_rate, :excluded_controllers, :excluded_jobs, :excluded_controller_actions, :exclusive_controller_actions, :exclusive_jobs, :deploy_id, :slow_query_threshold_ms, :explain_analyze_enabled
 
     def initialize
       @api_key = nil
@@ -23,6 +23,8 @@ module ApmBro
       @excluded_controllers = []
       @excluded_jobs = []
       @excluded_controller_actions = []
+      @exclusive_controller_actions = []
+      @exclusive_jobs = []
       @deploy_id = resolve_deploy_id
       @slow_query_threshold_ms = 500 # Default: 500ms
       @explain_analyze_enabled = false # Enable EXPLAIN ANALYZE for slow queries by default
@@ -106,9 +108,22 @@ module ApmBro
       list.any? { |pat| match_name_or_pattern?(job_class_name, pat) }
     end
 
+    def exclusive_job?(job_class_name)
+      list = resolve_exclusive_jobs
+      return true if list.nil? || list.empty? # If not defined, allow all (default behavior)
+      list.any? { |pat| match_name_or_pattern?(job_class_name, pat) }
+    end
+
     def excluded_controller_action?(controller_name, action_name)
       list = resolve_excluded_controller_actions
       return false if list.nil? || list.empty?
+      target = "#{controller_name}##{action_name}"
+      list.any? { |pat| match_name_or_pattern?(target, pat) }
+    end
+
+    def exclusive_controller_action?(controller_name, action_name)
+      list = resolve_exclusive_controller_actions
+      return true if list.nil? || list.empty? # If not defined, allow all (default behavior)
       target = "#{controller_name}##{action_name}"
       list.any? { |pat| match_name_or_pattern?(target, pat) }
     end
@@ -181,6 +196,58 @@ module ApmBro
 
       env = ENV["APM_BRO_EXCLUDED_JOBS"]
       return env.split(",").map(&:strip) if env && !env.strip.empty?
+
+      []
+    end
+
+    def resolve_exclusive_controller_actions
+      # Collect patterns from @exclusive_controller_actions
+      patterns = []
+      if @exclusive_controller_actions && !@exclusive_controller_actions.empty?
+        patterns.concat(Array(@exclusive_controller_actions))
+      end
+
+      return patterns if !patterns.empty?
+
+      if defined?(Rails)
+        list = fetch_from_rails_settings(%w[apm_bro exclusive_controller_actions])
+        if list
+          rails_patterns = Array(list)
+          return rails_patterns if !rails_patterns.empty?
+        end
+      end
+
+      env = ENV["APM_BRO_EXCLUSIVE_CONTROLLER_ACTIONS"]
+      if env && !env.strip.empty?
+        env_patterns = env.split(",").map(&:strip)
+        return env_patterns if !env_patterns.empty?
+      end
+
+      []
+    end
+
+    def resolve_exclusive_jobs
+      # Collect patterns from @exclusive_jobs
+      patterns = []
+      if @exclusive_jobs && !@exclusive_jobs.empty?
+        patterns.concat(Array(@exclusive_jobs))
+      end
+
+      return patterns if !patterns.empty?
+
+      if defined?(Rails)
+        list = fetch_from_rails_settings(%w[apm_bro exclusive_jobs])
+        if list
+          rails_patterns = Array(list)
+          return rails_patterns if !rails_patterns.empty?
+        end
+      end
+
+      env = ENV["APM_BRO_EXCLUSIVE_JOBS"]
+      if env && !env.strip.empty?
+        env_patterns = env.split(",").map(&:strip)
+        return env_patterns if !env_patterns.empty?
+      end
 
       []
     end

@@ -99,6 +99,56 @@ Notes:
 - Wildcards `*` are supported for controller and action (e.g., `Admin::*#*`).
 - Matching is done against full names like `UsersController`, `Admin::ReportsController#index`, `MyJob`.
 
+## Exclusive Tracking (Whitelist Mode)
+
+You can configure ApmBro to **only** track specific controllers, actions, or jobs. This is useful when you want to focus monitoring on a subset of your application.
+
+### Configuration
+
+```ruby
+ApmBro.configure do |config|
+  # Only track these specific controller actions
+  config.exclusive_controller_actions = [
+    "UsersController#show",
+    "UsersController#index",
+    "Admin::ReportsController#*", # all actions in this controller
+    "Api::*#*" # all actions in all Api controllers
+  ]
+
+  # Only track these specific jobs
+  config.exclusive_jobs = [
+    "PaymentProcessingJob",
+    "EmailDeliveryJob",
+    "Admin::*" # all jobs in Admin namespace
+  ]
+end
+```
+
+### How It Works
+
+- **If `exclusive_controller_actions` or `exclusive_jobs` is empty/not defined**: All controllers/actions/jobs are tracked (default behavior)
+- **If `exclusive_controller_actions` or `exclusive_jobs` is defined with values**: Only matching controllers/actions/jobs are tracked
+- **Exclusion takes precedence**: If something is in both `excluded_*` and `exclusive_*`, it will be excluded (exclusion is checked first)
+
+### Use Cases
+
+- **Focus on Critical Paths**: Monitor only your most important endpoints
+- **Cost Optimization**: Track only specific high-value operations
+- **Debugging**: Temporarily focus on specific controllers/jobs during investigation
+- **Compliance**: Track only operations that require monitoring for compliance reasons
+
+### Environment Variables
+
+You can also configure exclusive tracking via environment variables:
+
+```bash
+# Comma-separated list of controller#action patterns
+APM_BRO_EXCLUSIVE_CONTROLLER_ACTIONS="UsersController#show,Admin::*#*"
+
+# Comma-separated list of job patterns
+APM_BRO_EXCLUSIVE_JOBS="PaymentProcessingJob,EmailDeliveryJob"
+```
+
 ## SQL Query Tracking
 
 ApmBro automatically tracks SQL queries executed during each request and job. Each request will include a `sql_queries` array containing:
