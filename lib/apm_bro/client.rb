@@ -59,9 +59,10 @@ module ApmBro
     end
 
     def make_http_request(event_name, payload, api_key)
+      production_url = ENV["USE_STAGING_ENDPOINT"].present? ? "https://deadbro.aberatii.com/apm/v1/metrics" : "https://www.deadbro.com/apm/v1/metrics"
       endpoint_url = (@configuration.respond_to?(:ruby_dev) && @configuration.ruby_dev) ?
           "http://localhost:3100/apm/v1/metrics" :
-          "https://www.deadbro.com/apm/v1/metrics"
+          production_url
 
       uri = URI.parse(endpoint_url)
       http = Net::HTTP.new(uri.host, uri.port)

@@ -38,7 +38,7 @@ module ApmBro
 
               # Skip instrumentation for our own APM endpoint to prevent infinite loops,
               # but do NOT alter the original method's return value/control flow.
-              skip_instrumentation = uri && (uri.to_s.include?("localhost") || uri.to_s.include?("uptime.aberatii.com"))
+              skip_instrumentation = uri && (uri.to_s.include?("localhost") || uri.to_s.include?("aberatii.com"))
 
               unless skip_instrumentation
                 payload = {
@@ -85,7 +85,7 @@ module ApmBro
 
               # Skip instrumentation for our own APM endpoint to prevent infinite loops,
               # but do NOT alter the original method's return value/control flow.
-              skip_instrumentation = req_url && req_url.include?("localhost:3100/apm/v1/metrics")
+              skip_instrumentation = req_url && (req_url.include?("localhost:3100/apm/v1/metrics") || req_url.include?("deadbro.aberatii.com/apm/v1/metrics"))
 
               unless skip_instrumentation
                 payload = {
