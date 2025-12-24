@@ -33,9 +33,15 @@ module ApmBro
   def self.configuration
     @configuration ||= Configuration.new
   end
-
+  
   def self.reset_configuration!
-    @configuration = Configuration.new
+    @configuration = nil
+    @client = nil
+  end
+
+  # Returns a shared Client instance for use across the application
+  def self.client
+    @client ||= Client.new
   end
 
   # Returns a process-stable deploy identifier used when none is configured.

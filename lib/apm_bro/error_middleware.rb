@@ -6,9 +6,9 @@ module ApmBro
   class ErrorMiddleware
     EVENT_NAME = "exception.uncaught"
 
-    def initialize(app, client: Client.new)
+    def initialize(app, client = nil)
       @app = app
-      @client = client
+      @client = client || ApmBro.client
     end
 
     def call(env)

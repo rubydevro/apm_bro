@@ -13,21 +13,12 @@ module ApmBro
     end
 
     def post_metric(event_name:, payload:)
-      unless @configuration.enabled
-        return
-      end
+      return if @configuration.api_key.nil?
+      return unless @configuration.enabled
 
       # Check sampling rate - skip if not selected for sampling
-      unless @configuration.should_sample?
-        return
-      end
-
-      api_key = @configuration.resolve_api_key
-
-      if api_key.nil?
-        return
-      end
-
+      return unless @configuration.should_sample?
+      
       # Check circuit breaker before making request
       if @circuit_breaker && @configuration.circuit_breaker_enabled
         if @circuit_breaker.state == :open
@@ -41,7 +32,7 @@ module ApmBro
       end
 
       # Make the HTTP request (async)
-      make_http_request(event_name, payload, api_key)
+      make_http_request(event_name, payload, @configuration.api_key)
 
       nil
     end
@@ -59,11 +50,9 @@ module ApmBro
     end
 
     def make_http_request(event_name, payload, api_key)
-      production_url = ENV["USE_STAGING_ENDPOINT"].present? ? "https://deadbro.aberatii.com/apm/v1/metrics" : "https://www.deadbro.com/apm/v1/metrics"
-      endpoint_url = (@configuration.respond_to?(:ruby_dev) && @configuration.ruby_dev) ?
-          "http://localhost:3100/apm/v1/metrics" :
-          production_url
-
+      use_staging = ENV["USE_STAGING_ENDPOINT"] && !ENV["USE_STAGING_ENDPOINT"].empty?
+      production_url = use_staging ? "https://deadbro.aberatii.com/apm/v1/metrics" : "https://www.deadbro.com/apm/v1/metrics"
+      endpoint_url = @configuration.ruby_dev ? "http://localhost:3100/apm/v1/metrics" : production_url
       uri = URI.parse(endpoint_url)
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = (uri.scheme == "https")

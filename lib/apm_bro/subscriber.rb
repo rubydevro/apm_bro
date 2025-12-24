@@ -13,11 +13,13 @@ module ApmBro
         begin
           controller_name = data[:controller].to_s
           action_name = data[:action].to_s
-          if ApmBro.configuration.excluded_controller_action?(controller_name, action_name)
+          if ApmBro.configuration.excluded_controller?(controller_name, action_name)
+            puts "excluded controller"
             next
           end
           # If exclusive_controller_actions is defined and not empty, only track matching actions
-          unless ApmBro.configuration.exclusive_controller_action?(controller_name, action_name)
+          unless ApmBro.configuration.exclusive_controller?(controller_name, action_name)
+            puts "exclusive controller"
             next
           end
         rescue
